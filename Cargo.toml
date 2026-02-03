@@ -1,0 +1,26 @@
+[package]
+name = "alice-codec"
+version = "0.1.0"
+edition = "2021"
+authors = ["Moroya Sakamoto <ext-sakamoro@github.com>"]
+description = "Hyper-Fast 3D Wavelet Video/Audio Codec"
+license = "AGPL-3.0"
+repository = "https://github.com/ext-sakamoro/ALICE-Codec"
+keywords = ["codec", "video", "wavelet", "compression", "rans"]
+categories = ["compression", "multimedia::video"]
+
+[lib]
+name = "alice_codec"
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+simd = []
+
+# [dev-dependencies]
+# criterion = "0.5"
+#
+# [[bench]]
+# name = "wavelet"
+# harness = false
