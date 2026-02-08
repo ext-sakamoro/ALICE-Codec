@@ -320,6 +320,41 @@ cargo test
 cargo bench
 ```
 
+## ASP Integration (ALICE-Streaming-Protocol)
+
+ALICE-Codec is integrated into [ALICE-Streaming-Protocol](https://github.com/ext-sakamoro/ALICE-Streaming-Protocol) as the video encoding backend via the `codec` feature flag.
+
+```toml
+# In ALICE-Streaming-Protocol's Cargo.toml
+libasp = { version = "1.0", features = ["codec"] }
+```
+
+### How ASP Uses ALICE-Codec
+
+ASP wraps ALICE-Codec's 2D wavelet pipeline for single-frame video encoding within the ASP transport layer:
+
+```
+ASP Video Encode:
+  RGB frame → YCoCg-R (alice-codec::color)
+            → 2D CDF 9/7 Wavelet (alice-codec::Wavelet2D)
+            → Quantize (alice-codec::Quantizer)
+            → coeffs_to_symbols (alice-codec::quant)
+            → rANS entropy coding (alice-codec::rans)
+            → ASP packet framing
+```
+
+- **Rayon parallel 3-channel**: Y/Co/Cg planes are wavelet-transformed and entropy-coded in parallel via `rayon::join`
+- **Quality-mapped quantization**: ASP maps quality (0-100) to quantization step for 2D single-frame use
+- **Python bindings**: `libasp.encode_video_frame()` / `libasp.decode_video_frame()` with GIL release
+
+### Standalone vs ASP Usage
+
+| Use Case | Recommended |
+|----------|-------------|
+| 3D video chunks (64-frame GoP) | ALICE-Codec standalone (`Wavelet3D`) |
+| Single-frame in ASP transport | ASP `media-stack` feature (`Wavelet2D`) |
+| Person region in hybrid streaming | ASP hybrid + ALICE-Codec wavelet |
+
 ## References
 
 - [JPEG2000 Part 1](https://www.iso.org/standard/78321.html) - CDF 9/7 Wavelet
