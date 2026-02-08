@@ -40,12 +40,17 @@ pub mod wavelet;
 pub mod color;
 pub mod rans;
 pub mod quant;
+pub mod segment;
+
+#[cfg(feature = "python")]
+mod python;
 
 // Re-exports
 pub use wavelet::{Wavelet1D, Wavelet2D, Wavelet3D};
 pub use color::{rgb_to_ycocg_r, ycocg_r_to_rgb};
 pub use rans::{RansEncoder, RansDecoder, RansState};
 pub use quant::{Quantizer, AnalyticalRDO};
+pub use segment::{SegmentConfig, SegmentResult, segment_by_motion, segment_by_chroma};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

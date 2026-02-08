@@ -167,6 +167,8 @@ fn fast_div(&self, x: u32) -> u32 {
 | **Color** | `color.rs` | YCoCg-R reversible color transform + AVX2 SIMD |
 | **Quantization** | `quant.rs` | Dead-zone quantizer, FastQuantizer (magic division), Analytical RDO |
 | **Entropy** | `rans.rs` | 32-bit rANS, Interleaved 4-stream, SimdRansDecoder |
+| **Segmentation** | `segment.rs` | Person segmentation (motion/chroma-key), separable morphology, RLE mask |
+| **Python** | `python.rs` | PyO3 + NumPy zero-copy bindings (GIL release) |
 
 ## Quick Start
 
@@ -227,6 +229,61 @@ let mut rgb_out = vec![RGB::new(0, 0, 0); pixels.len()];
 ycocg_r_to_rgb(&y_out, &co, &cg, &mut rgb_out);
 ```
 
+## Person Segmentation (Hybrid Streaming)
+
+ALICE-Codec includes a high-performance person segmentation module for **ALICE Hybrid Streaming** — where SDF-rendered backgrounds replace pixel data, and only the person region is wavelet-encoded.
+
+### Optimizations (カリカリ)
+
+| Technique | Complexity | Effect |
+|-----------|-----------|--------|
+| Branchless frame diff (`saturating_sub \| saturating_sub`) | O(n) | Auto-vectorizes to VPSUBUSB + VPOR (~32 px/cycle) |
+| Separable morphological dilation | O(n) vs O(n×r²) | Distance-to-nearest forward+backward scan |
+| Erosion via complement identity | O(n) | `erode(m) = NOT(dilate(NOT(m)))` |
+| Row-scan bounding box | O(n) | `position()`/`rposition()` per row, cache-friendly |
+| Scan-forward RLE encoding | O(n) | Bulk transition detection, auto-vectorizable |
+
+### Python Bindings (NumPy Zero-Copy + GIL Release)
+
+```python
+import alice_codec
+import numpy as np
+
+# Motion-based person segmentation
+current = np.array(frame, dtype=np.uint8).reshape(height, width)
+reference = np.array(bg_frame, dtype=np.uint8).reshape(height, width)
+
+mask, bbox, fg_count = alice_codec.segment_motion_numpy(
+    current, reference,
+    motion_threshold=25,
+    dilate_radius=2,
+    erode_radius=1,
+)
+# mask: (H, W) uint8 NumPy array, bbox: [x, y, w, h], fg_count: int
+
+# Chroma-key segmentation (green screen)
+mask, bbox, fg_count = alice_codec.segment_chroma_numpy(
+    y_channel, co_channel, cg_channel,
+    green_threshold=30,
+)
+
+# Crop/paste person region
+person = alice_codec.crop_bbox_numpy(frame, bbox)
+alice_codec.paste_bbox_numpy(output_frame, person_data, bbox)
+
+# RLE compress mask
+rle_bytes = alice_codec.rle_encode_numpy(mask)
+```
+
+**Python Binding Optimization Layers:**
+
+| Layer | Technique | Effect |
+|-------|-----------|--------|
+| L1 | GIL Release (`py.allow_threads`) | Parallel computation |
+| L2 | Zero-Copy NumPy (`as_slice`/`into_pyarray`) | No memcpy |
+| L3 | Batch API (whole-frame ops) | FFI amortization |
+| L4 | Rust backend (segment, wavelet, rANS) | Hardware-speed |
+
 ## Performance Targets
 
 | Metric | Target | Optimization |
@@ -252,7 +309,11 @@ cargo build --release
 # With SIMD optimizations
 cargo build --release --features simd
 
-# Run tests
+# With Python bindings (requires Python + maturin)
+pip install maturin
+maturin develop --release --features python
+
+# Run tests (42 tests)
 cargo test
 
 # Run benchmarks

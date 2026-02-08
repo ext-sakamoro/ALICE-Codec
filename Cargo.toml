@@ -12,11 +12,17 @@ categories = ["compression", "multimedia::video"]
 [lib]
 name = "alice_codec"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [features]
 default = ["std"]
 std = []
 simd = []
+python = ["pyo3", "numpy"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
+numpy = { version = "0.23", optional = true }
 
 [profile.release]
 opt-level = 3
