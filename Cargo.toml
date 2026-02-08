@@ -39,3 +39,9 @@ strip = true
 # [[bench]]
 # name = "wavelet"
 # harness = false
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
