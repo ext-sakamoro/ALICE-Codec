@@ -45,6 +45,9 @@ pub mod segment;
 #[cfg(feature = "python")]
 mod python;
 
+#[cfg(feature = "ml")]
+pub mod ml_bridge;
+
 // Re-exports
 pub use wavelet::{Wavelet1D, Wavelet2D, Wavelet3D};
 pub use color::{rgb_to_ycocg_r, ycocg_r_to_rgb};
