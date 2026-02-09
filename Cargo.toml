@@ -21,12 +21,14 @@ simd = []
 python = ["pyo3", "numpy"]
 ml = ["dep:alice-ml"]  # ALICE-ML ternary inference for motion estimation
 db = ["dep:alice-db", "std"]  # ALICE-DB metrics storage for monitoring
+crypto = ["dep:alice-crypto", "std"]  # ALICE-Crypto AEAD encryption for bitstreams
 
 [dependencies]
 pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
 numpy = { version = "0.23", optional = true }
 alice-ml = { path = "../ALICE-ML", optional = true, default-features = false, features = ["std"] }
 alice-db = { path = "../ALICE-DB", optional = true, default-features = false }
+alice-crypto = { path = "../ALICE-Crypto", optional = true, default-features = false, features = ["std"] }
 
 [profile.release]
 opt-level = 3
