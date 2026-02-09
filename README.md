@@ -169,6 +169,7 @@ fn fast_div(&self, x: u32) -> u32 {
 | **Entropy** | `rans.rs` | 32-bit rANS, Interleaved 4-stream, SimdRansDecoder |
 | **Segmentation** | `segment.rs` | Person segmentation (motion/chroma-key), separable morphology, RLE mask |
 | **Python** | `python.rs` | PyO3 + NumPy zero-copy bindings (GIL release) |
+| **Crypto Bridge** | `crypto_bridge.rs` | AEAD encryption for bitstreams via ALICE-Crypto (feature: `crypto`) |
 
 ## Quick Start
 
@@ -354,6 +355,39 @@ ASP Video Encode:
 | 3D video chunks (64-frame GoP) | ALICE-Codec standalone (`Wavelet3D`) |
 | Single-frame in ASP transport | ASP `media-stack` feature (`Wavelet2D`) |
 | Person region in hybrid streaming | ASP hybrid + ALICE-Codec wavelet |
+
+## Cross-Crate Bridges
+
+ALICE-Codec connects to other ALICE ecosystem crates via feature-gated bridge modules:
+
+| Bridge | Feature | Target Crate | Description |
+|--------|---------|--------------|-------------|
+| `crypto_bridge` | `crypto` | [ALICE-Crypto](../ALICE-Crypto) | XChaCha20-Poly1305 AEAD encryption for compressed bitstreams |
+
+### Crypto Bridge (feature: `crypto`)
+
+Wraps compressed bitstream data with authenticated encryption for secure storage or DRM delivery.
+
+```toml
+[dependencies]
+alice-codec = { path = "../ALICE-Codec", features = ["crypto"] }
+```
+
+```rust
+use alice_codec::crypto_bridge::{seal_bitstream, open_bitstream, derive_key, content_hash};
+
+// Derive a key from passphrase
+let key = derive_key("alice-codec-v1", b"my-secret");
+
+// Encrypt compressed data
+let sealed = seal_bitstream(&compressed_bytes, &key)?;
+
+// Content-addressed deduplication (no decryption needed)
+let hash = content_hash(&sealed.data);
+
+// Decrypt
+let plaintext = open_bitstream(&sealed, &key)?;
+```
 
 ## References
 
