@@ -363,6 +363,7 @@ ALICE-Codec connects to other ALICE ecosystem crates via feature-gated bridge mo
 | Bridge | Feature | Target Crate | Description |
 |--------|---------|--------------|-------------|
 | `crypto_bridge` | `crypto` | [ALICE-Crypto](../ALICE-Crypto) | XChaCha20-Poly1305 AEAD encryption for compressed bitstreams |
+| `cache_bridge` | `cache` | [ALICE-Cache](../ALICE-Cache) | Decoded frame caching for instant scrubbing and seeking |
 
 ### Crypto Bridge (feature: `crypto`)
 
