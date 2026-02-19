@@ -8,6 +8,7 @@ license = "AGPL-3.0"
 repository = "https://github.com/ext-sakamoro/ALICE-Codec"
 keywords = ["codec", "video", "wavelet", "compression", "rans"]
 categories = ["compression", "multimedia::video"]
+publish = false
 
 [lib]
 name = "alice_codec"
