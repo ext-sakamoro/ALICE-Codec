@@ -43,7 +43,7 @@ impl SubBandClassifier {
         let mut logits = vec![0.0f32; self.num_classes];
         ternary_matvec(features, &self.weights, &mut logits);
         let (idx, &val) = logits.iter().enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap();
         (idx, val)
     }
