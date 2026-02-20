@@ -1,4 +1,4 @@
-//! Python bindings for ALICE-Codec — 「Pythonなのにカリカリ」
+//! Python bindings for ALICE-Codec
 //!
 //! # Optimization Layers
 //!

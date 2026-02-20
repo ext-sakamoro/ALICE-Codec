@@ -1,4 +1,4 @@
-//! Person Segmentation for ALICE Hybrid Streaming — カリカリ最適化版
+//! Person Segmentation for ALICE Hybrid Streaming
 //!
 //! ```text
 //! Full Frame → Segmentation → Person Mask + Person BBox
@@ -68,7 +68,8 @@ impl SegmentResult {
     pub fn coverage(&self) -> f32 {
         let total = self.width * self.height;
         if total == 0 { return 0.0; }
-        self.foreground_count as f32 / total as f32
+        let inv_total = 1.0 / total as f32;
+        self.foreground_count as f32 * inv_total
     }
 
     /// Extract person pixels from an RGB frame using the mask.
@@ -126,7 +127,7 @@ impl SegmentResult {
 // Segmentation — SIMD-friendly, branchless
 // ═══════════════════════════════════════════════════════════════
 
-/// Motion-based person segmentation — カリカリ最適化版
+/// Motion-based person segmentation
 ///
 /// Performance model:
 /// - Frame diff: `|c-r| = c.saturating_sub(r) | r.saturating_sub(c)` → auto-vectorizes

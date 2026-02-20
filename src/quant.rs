@@ -297,7 +297,8 @@ impl AnalyticalRDO {
         // Quality 100 → ~24 bpp (near lossless for 8-bit RGB)
         // Quality 50 → ~2 bpp
         // Quality 0 → ~0.1 bpp
-        let target_bpp = 0.1 + (quality as f64 / 100.0).powi(2) * 23.9;
+        const RCP_100: f64 = 1.0 / 100.0;
+        let target_bpp = 0.1 + (quality as f64 * RCP_100).powi(2) * 23.9;
 
         Self { target_bpp, quality }
     }
@@ -309,8 +310,9 @@ impl AnalyticalRDO {
         }
 
         let n = coeffs.len() as f64;
+        let inv_n = 1.0 / n;
         let sum: i64 = coeffs.iter().map(|&x| x as i64).sum();
-        let mean = sum as f64 / n;
+        let mean = sum as f64 * inv_n;
 
         let variance: f64 = coeffs
             .iter()
@@ -319,7 +321,7 @@ impl AnalyticalRDO {
                 diff * diff
             })
             .sum::<f64>()
-            / n;
+            * inv_n;
 
         variance.max(1.0)
     }
