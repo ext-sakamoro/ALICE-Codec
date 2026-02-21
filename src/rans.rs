@@ -110,9 +110,11 @@ impl FrequencyTable {
         let mut cum_to_sym = vec![0u8; PROB_SCALE as usize];
         for (sym, entry) in symbols.iter().enumerate() {
             let start = entry.cum_freq as usize;
-            let end = start + entry.freq as usize;
-            for slot in cum_to_sym[start..end.min(PROB_SCALE as usize)].iter_mut() {
-                *slot = sym as u8;
+            let end = (start + entry.freq as usize).min(PROB_SCALE as usize);
+            if start < end {
+                for slot in cum_to_sym[start..end].iter_mut() {
+                    *slot = sym as u8;
+                }
             }
         }
 
@@ -142,9 +144,11 @@ impl FrequencyTable {
         let mut cum_to_sym = vec![0u8; PROB_SCALE as usize];
         for (sym, entry) in symbols.iter().enumerate() {
             let start = entry.cum_freq as usize;
-            let end = start + entry.freq as usize;
-            for slot in cum_to_sym[start..end.min(PROB_SCALE as usize)].iter_mut() {
-                *slot = sym as u8;
+            let end = (start + entry.freq as usize).min(PROB_SCALE as usize);
+            if start < end {
+                for slot in cum_to_sym[start..end].iter_mut() {
+                    *slot = sym as u8;
+                }
             }
         }
 
