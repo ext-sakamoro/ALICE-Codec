@@ -168,7 +168,7 @@ impl FastQuantizer {
 
         // reciprocal = ceil(2^shift / step)
         let power: u128 = 1u128 << shift;
-        let reciprocal = ((power + step_u as u128 - 1) / step_u as u128) as u64;
+        let reciprocal = power.div_ceil(step_u as u128) as u64;
 
         Self {
             reciprocal,
@@ -239,6 +239,27 @@ impl FastQuantizer {
         assert!(output.len() >= input.len());
         for (i, &val) in input.iter().enumerate() {
             output[i] = self.dequantize(val);
+        }
+    }
+
+    /// Quantize buffer using AVX2 SIMD (8 coefficients at a time)
+    ///
+    /// Falls back to scalar path on non-x86_64 or when `simd` feature is disabled.
+    ///
+    /// # Safety (SIMD path)
+    ///
+    /// Requires AVX2 support at runtime. The implementation checks for AVX2 via
+    /// `#[target_feature]` and the compiler guarantees it is only called on
+    /// CPUs that expose the AVX2 feature.
+    pub fn quantize_buffer_simd(&self, input: &[i32], output: &mut [i32]) {
+        #[cfg(all(target_arch = "x86_64", feature = "simd"))]
+        {
+            // SAFETY: quantize_avx2 is guarded by #[target_feature(enable = "avx2")].
+            unsafe { quantize_avx2(input, output, self.step, self.dead_zone) }
+        }
+        #[cfg(not(all(target_arch = "x86_64", feature = "simd")))]
+        {
+            self.quantize_buffer(input, output);
         }
     }
 
@@ -419,9 +440,9 @@ pub fn to_symbols(coeffs: &[i32], symbols: &mut [u8]) {
         symbols[i] = if coeff == 0 {
             0
         } else if coeff > 0 {
-            ((coeff * 2 - 1) as u8).min(255)
+            (coeff * 2 - 1) as u8
         } else {
-            ((-coeff * 2) as u8).min(255)
+            (-coeff * 2) as u8
         };
     }
 }

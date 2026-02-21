@@ -111,8 +111,8 @@ impl FrequencyTable {
         for (sym, entry) in symbols.iter().enumerate() {
             let start = entry.cum_freq as usize;
             let end = start + entry.freq as usize;
-            for i in start..end.min(PROB_SCALE as usize) {
-                cum_to_sym[i] = sym as u8;
+            for slot in cum_to_sym[start..end.min(PROB_SCALE as usize)].iter_mut() {
+                *slot = sym as u8;
             }
         }
 
@@ -143,8 +143,8 @@ impl FrequencyTable {
         for (sym, entry) in symbols.iter().enumerate() {
             let start = entry.cum_freq as usize;
             let end = start + entry.freq as usize;
-            for i in start..end.min(PROB_SCALE as usize) {
-                cum_to_sym[i] = sym as u8;
+            for slot in cum_to_sym[start..end.min(PROB_SCALE as usize)].iter_mut() {
+                *slot = sym as u8;
             }
         }
 
@@ -292,7 +292,7 @@ impl<'a> RansDecoder<'a> {
     #[inline]
     pub fn decode(&mut self, table: &FrequencyTable) -> u8 {
         // Extract cumulative frequency from state
-        let slot = (self.state & (PROB_SCALE - 1)) as u32;
+        let slot = self.state & (PROB_SCALE - 1);
 
         // Look up symbol
         let (sym, info) = table.decode_symbol(slot);
@@ -504,13 +504,13 @@ impl<'a> SimdRansDecoder<'a> {
     pub fn decode_4(&mut self, table: &FrequencyTable) -> [u8; 4] {
         let mut symbols = [0u8; 4];
 
-        for i in 0..4 {
+        for (i, sym_out) in symbols.iter_mut().enumerate() {
             // Extract slot
             let slot = self.states[i] & (PROB_SCALE - 1);
 
             // Lookup symbol
             let (sym, info) = table.decode_symbol(slot);
-            symbols[i] = sym;
+            *sym_out = sym;
 
             // Update state: x = freq * (x >> PROB_BITS) + slot - cum_freq
             let freq = info.freq as u32;
@@ -528,7 +528,7 @@ impl<'a> SimdRansDecoder<'a> {
 
     /// Decode n symbols (must be multiple of 4)
     pub fn decode_n(&mut self, n: usize, table: &FrequencyTable) -> Vec<u8> {
-        assert!(n % 4 == 0, "n must be multiple of 4 for SIMD decoder");
+        assert!(n.is_multiple_of(4), "n must be multiple of 4 for SIMD decoder");
         let mut output = Vec::with_capacity(n);
 
         for _ in 0..(n / 4) {
@@ -611,7 +611,7 @@ mod simd {
         /// Requires AVX2 support.
         #[target_feature(enable = "avx2")]
         pub unsafe fn decode_n_avx2(&mut self, n: usize, table: &FrequencyTable) -> Vec<u8> {
-            assert!(n % 4 == 0, "n must be multiple of 4 for SIMD decoder");
+            assert!(n.is_multiple_of(4), "n must be multiple of 4 for SIMD decoder");
             let mut output = Vec::with_capacity(n);
 
             for _ in 0..(n / 4) {
