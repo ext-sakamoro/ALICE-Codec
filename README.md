@@ -1,10 +1,10 @@
 # ALICE-Codec
 
-**Hyper-Fast 3D Wavelet Video/Audio Codec**
+**Hyper-Fast 3D Wavelet Video Codec**
 
 > "Time is just another spatial dimension."
 
-A radical video/audio codec that eliminates I/P/B frames entirely. Instead, it treats video as a 3D volume $(x, y, t)$ and compresses it using **3D Integer Wavelet Transform** + **rANS entropy coding**.
+A radical video codec that eliminates I/P/B frames entirely. Instead, it treats video as a 3D volume $(x, y, t)$ and compresses it using **3D Integer Wavelet Transform** + **rANS entropy coding**.
 
 Author: Moroya Sakamoto
 
@@ -32,26 +32,85 @@ ALICE-Codec:
 
 ## Quick Start
 
+### CLI
+
+```bash
+# Build CLI
+cargo build --release --features cli
+
+# Encode raw RGB frames → .alc bitstream
+alice-codec encode input.raw -W 1920 -H 1080 -f 64 -q 90 -w cdf97 -o output.alc
+
+# Show bitstream metadata
+alice-codec info output.alc
+
+# Decode .alc → raw RGB
+alice-codec decode output.alc -o recovered.raw
+```
+
 ### End-to-End Pipeline (Recommended)
 
 ```rust
-use alice_codec::{FrameEncoder, FrameDecoder};
+use alice_codec::{FrameEncoder, FrameDecoder, WaveletType};
 
 // Encode: RGB frames → compressed bytes
-let encoder = FrameEncoder::new(80); // quality 0-100
-let chunk = encoder.encode(&rgb_bytes, width, height, frames);
+let encoder = FrameEncoder::with_wavelet(80, WaveletType::Cdf97);
+let chunk = encoder.encode(&rgb_bytes, width, height, frames)?;
 
 println!("Compressed: {} bytes", chunk.compressed_size());
 
+// Serialize to file
+let bytes = chunk.to_bytes();
+std::fs::write("output.alc", &bytes)?;
+
+// Deserialize from file
+let loaded = EncodedChunk::from_bytes(&std::fs::read("output.alc")?)?;
+
 // Decode: compressed bytes → RGB frames
 let decoder = FrameDecoder::new();
-let recovered = decoder.decode(&chunk);
+let recovered = decoder.decode(&loaded)?;
 ```
 
 Each color channel (Y, Co, Cg) is processed independently through the full pipeline:
 
 ```
-RGB → YCoCg-R → 3D Wavelet CDF 5/3 → Quantize → rANS → bytes
+RGB → YCoCg-R → 3D Wavelet (CDF 5/3 | CDF 9/7 | Haar) → Quantize → rANS → bytes
+```
+
+### Wavelet Selection
+
+| Wavelet | Quality | Speed | Use Case |
+|---------|---------|-------|----------|
+| CDF 5/3 (default) | Good | Fastest | Real-time, streaming |
+| CDF 9/7 | Best | Fast | Archival, broadcast |
+| Haar | Moderate | Fastest | Edge detection, debug |
+
+### Serialization Format (.alc)
+
+```
+┌──────────┬─────────┬─────────┬───────────────┬─────────────┐
+│ "ALCC"   │ Version │ Wavelet │ W × H × F     │ 3× Channel  │
+│ 4 bytes  │ 1 byte  │ 1 byte  │ 3×u32 (12 B)  │ Headers     │
+├──────────┴─────────┴─────────┴───────────────┼─────────────┤
+│                                               │ Compressed  │
+│                                               │ Payload     │
+└───────────────────────────────────────────────┴─────────────┘
+```
+
+### Error Handling
+
+All encode/decode operations return `Result<T, CodecError>`:
+
+```rust
+use alice_codec::CodecError;
+
+match encoder.encode(&data, w, h, f) {
+    Ok(chunk) => { /* success */ }
+    Err(CodecError::InvalidBufferSize { expected, got }) => { /* wrong size */ }
+    Err(CodecError::InvalidDimensions { width, height }) => { /* zero dim */ }
+    Err(CodecError::DimensionOverflow) => { /* w*h*f overflow */ }
+    Err(CodecError::InvalidBitstream(msg)) => { /* corrupt data */ }
+}
 ```
 
 ### Advanced Usage (Manual Pipeline)
@@ -177,8 +236,9 @@ Better decorrelation than YCbCr. Lossless round-trip.
 │  ┌────────────────────────────────────────────────────────────┐  │
 │  │                 pipeline.rs (E2E API)                       │  │
 │  │                                                             │  │
-│  │  FrameEncoder::encode(rgb, w, h, f) → EncodedChunk         │  │
-│  │  FrameDecoder::decode(chunk)        → RGB bytes             │  │
+│  │  FrameEncoder::encode(rgb, w, h, f) → Result<EncodedChunk>  │  │
+│  │  FrameDecoder::decode(chunk)        → Result<Vec<u8>>      │  │
+│  │  EncodedChunk::to_bytes() / from_bytes()  (serialization)  │  │
 │  └────────────────────────────────────────────────────────────┘  │
 │       │             │              │             │                │
 │  ┌────▼─────┐  ┌────▼─────┐  ┌────▼─────┐  ┌───▼──────┐        │
@@ -205,7 +265,7 @@ Better decorrelation than YCbCr. Lossless round-trip.
 
 | Module | File | Description |
 |--------|------|-------------|
-| **Pipeline** | `pipeline.rs` | End-to-end `FrameEncoder`/`FrameDecoder` API |
+| **Pipeline** | `pipeline.rs` | End-to-end API with `Result` error handling, serialization, wavelet selection |
 | **Wavelet** | `wavelet.rs` | 1D/2D/3D Integer Lifting (Haar, CDF 5/3, CDF 9/7) |
 | **Color** | `color.rs` | YCoCg-R reversible color transform + AVX2 SIMD |
 | **Quantization** | `quant.rs` | Dead-zone quantizer, `FastQuantizer` (magic division), Analytical RDO |
@@ -277,6 +337,26 @@ ALICE-Codec includes a high-performance person segmentation module for **ALICE H
 ```python
 import alice_codec
 import numpy as np
+
+# --- Core Pipeline ---
+
+# Encode
+encoder = alice_codec.FrameEncoder(quality=80, wavelet="cdf97")
+chunk = encoder.encode(rgb_bytes, width=1920, height=1080, frames=1)
+
+# Serialize / deserialize
+data = chunk.to_bytes()
+loaded = alice_codec.EncodedChunk.from_bytes(data)
+
+# Decode
+decoder = alice_codec.FrameDecoder()
+recovered = decoder.decode(loaded)
+
+# Color conversion (NumPy zero-copy)
+y, co, cg = alice_codec.rgb_to_ycocg_r_numpy(rgb_array)
+rgb_out = alice_codec.ycocg_r_to_rgb_numpy(y, co, cg)
+
+# --- Person Segmentation ---
 
 # Motion-based person segmentation
 current = np.array(frame, dtype=np.uint8).reshape(height, width)
@@ -451,17 +531,23 @@ This codec prioritizes **throughput** and **edit-friendliness** over **low laten
 
 | Metric | Value |
 |--------|-------|
-| Tests | 98 passing |
+| Tests | 111 passing |
 | Clippy (default) | 0 warnings |
 | Clippy (pedantic) | 0 warnings |
+| Format (`cargo fmt`) | 0 violations |
 | Doc warnings | 0 |
-| SAFETY comments | All unsafe blocks covered |
+| Error handling | All APIs return `Result` |
+| Thread safety | `Send + Sync` compile-time verified |
+| Overflow protection | `checked_mul` for dimensions |
 
 ## Building
 
 ```bash
-# Standard build
+# Standard build (library only)
 cargo build --release
+
+# With CLI binary
+cargo build --release --features cli
 
 # With SIMD optimizations
 cargo build --release --features simd
@@ -470,11 +556,11 @@ cargo build --release --features simd
 pip install maturin
 maturin develop --release --features python
 
-# Run tests (98 tests)
+# Run tests (111 tests)
 cargo test
 
-# Run benchmarks
-cargo bench
+# Pedantic lint check
+cargo clippy -- -W clippy::pedantic
 ```
 
 ## References

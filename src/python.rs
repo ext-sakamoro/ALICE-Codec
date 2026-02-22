@@ -13,7 +13,7 @@ use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, P
 use pyo3::prelude::*;
 
 use crate::color::{rgb_bytes_to_ycocg_r, ycocg_r_to_rgb_bytes};
-use crate::pipeline::{EncodedChunk, FrameDecoder, FrameEncoder};
+use crate::pipeline::{CodecError, EncodedChunk, FrameDecoder, FrameEncoder, WaveletType};
 use crate::segment::{
     crop_to_bbox, paste_from_bbox, segment_by_chroma, segment_by_motion, SegmentConfig,
     SegmentResult,
@@ -51,6 +51,11 @@ impl SendPtrI16 {
     unsafe fn as_slice(&self) -> &[i16] {
         std::slice::from_raw_parts(self.0, self.1)
     }
+}
+
+/// Convert [`CodecError`] to a Python exception.
+fn codec_err_to_py(e: CodecError) -> pyo3::PyErr {
+    pyo3::exceptions::PyValueError::new_err(e.to_string())
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -305,13 +310,43 @@ impl PyEncodedChunk {
         self.inner.frames
     }
 
+    /// Wavelet type used during encoding ("cdf53", "cdf97", or "haar").
+    #[getter]
+    fn wavelet(&self) -> &'static str {
+        match self.inner.wavelet_type {
+            WaveletType::Cdf53 => "cdf53",
+            WaveletType::Cdf97 => "cdf97",
+            WaveletType::Haar => "haar",
+        }
+    }
+
+    /// Serialize to bytes (for file I/O or network transfer).
+    fn to_bytes(&self) -> Vec<u8> {
+        self.inner.to_bytes()
+    }
+
+    /// Reconstruct from bytes previously produced by `to_bytes()`.
+    ///
+    /// Raises:
+    ///     ValueError: if the data is truncated or has wrong magic.
+    #[staticmethod]
+    fn from_bytes(data: &[u8]) -> PyResult<Self> {
+        let inner = EncodedChunk::from_bytes(data).map_err(codec_err_to_py)?;
+        Ok(Self { inner })
+    }
+
     fn __repr__(&self) -> String {
         format!(
-            "EncodedChunk({}x{}x{}, {} bytes)",
+            "EncodedChunk({}x{}x{}, {} bytes, {})",
             self.inner.width,
             self.inner.height,
             self.inner.frames,
-            self.inner.compressed_size()
+            self.inner.compressed_size(),
+            match self.inner.wavelet_type {
+                WaveletType::Cdf53 => "cdf53",
+                WaveletType::Cdf97 => "cdf97",
+                WaveletType::Haar => "haar",
+            }
         )
     }
 }
@@ -329,13 +364,27 @@ struct PyFrameEncoder {
 
 #[pymethods]
 impl PyFrameEncoder {
-    /// Create an encoder with quality 0-100 (100 = near-lossless).
+    /// Create an encoder with quality 0-100 and optional wavelet type.
+    ///
+    /// Args:
+    ///     quality: 0 = max compression, 100 = near-lossless (default: 90)
+    ///     wavelet: "cdf53" (default), "cdf97", or "haar"
     #[new]
-    #[pyo3(signature = (quality=90))]
-    fn new(quality: u8) -> Self {
-        Self {
-            inner: FrameEncoder::new(quality),
-        }
+    #[pyo3(signature = (quality=90, wavelet="cdf53"))]
+    fn new(quality: u8, wavelet: &str) -> PyResult<Self> {
+        let wt = match wavelet {
+            "cdf53" => WaveletType::Cdf53,
+            "cdf97" => WaveletType::Cdf97,
+            "haar" => WaveletType::Haar,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "unknown wavelet type '{wavelet}'; expected 'cdf53', 'cdf97', or 'haar'"
+                )));
+            }
+        };
+        Ok(Self {
+            inner: FrameEncoder::with_wavelet(quality, wt),
+        })
     }
 
     /// Encode interleaved RGB frames into a compressed chunk.
@@ -348,6 +397,9 @@ impl PyFrameEncoder {
     ///
     /// Returns:
     ///     EncodedChunk containing the compressed bitstream.
+    ///
+    /// Raises:
+    ///     ValueError: if buffer size is wrong or dimensions are invalid.
     fn encode(
         &self,
         py: Python<'_>,
@@ -361,26 +413,20 @@ impl PyFrameEncoder {
             pyo3::exceptions::PyValueError::new_err("rgb_frames must be C-contiguous")
         })?;
 
-        let expected = (width as usize) * (height as usize) * (frames as usize) * 3;
-        if slice.len() != expected {
-            return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "rgb_frames length {} != width*height*frames*3 = {}",
-                slice.len(),
-                expected
-            )));
-        }
-
         let send = SendPtr::new(slice.as_ptr(), slice.len());
         let quality = self.inner.quality;
+        let wavelet_type = self.inner.wavelet_type;
 
-        let chunk = py.allow_threads(move || {
+        let result = py.allow_threads(move || {
             // SAFETY: Pointer from C-contiguous NumPy array, kept alive by Python GC.
             let data = unsafe { send.as_slice() };
-            let enc = FrameEncoder::new(quality);
+            let enc = FrameEncoder::with_wavelet(quality, wavelet_type);
             enc.encode(data, width, height, frames)
         });
 
-        Ok(PyEncodedChunk { inner: chunk })
+        Ok(PyEncodedChunk {
+            inner: result.map_err(codec_err_to_py)?,
+        })
     }
 }
 
@@ -410,6 +456,9 @@ impl PyFrameDecoder {
     ///
     /// Returns:
     ///     1-D uint8 NumPy array [R0,G0,B0, R1,G1,B1, ...]
+    ///
+    /// Raises:
+    ///     ValueError: if the bitstream is malformed.
     fn decode<'py>(
         &self,
         py: Python<'py>,
@@ -418,11 +467,12 @@ impl PyFrameDecoder {
         // Clone the chunk so we can move it into the GIL-released closure.
         let chunk_clone = chunk.inner.clone();
 
-        let rgb = py.allow_threads(move || {
+        let result = py.allow_threads(move || {
             let dec = FrameDecoder::new();
             dec.decode(&chunk_clone)
         });
 
+        let rgb = result.map_err(codec_err_to_py)?;
         Ok(rgb.into_pyarray(py))
     }
 }

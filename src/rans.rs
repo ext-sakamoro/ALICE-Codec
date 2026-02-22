@@ -236,9 +236,10 @@ impl RansEncoder {
         let freq = sym.freq as u32;
         let cum_freq = sym.cum_freq as u32;
 
-        // Renormalize: output bytes while state is too large
-        let x_max = ((RANS32_L >> PROB_BITS) << 8) * freq;
-        while self.state >= x_max {
+        // Renormalize: output bytes while state is too large.
+        // Use u64 intermediate to avoid overflow when freq is large.
+        let x_max = (((RANS32_L >> PROB_BITS) as u64) << 8) * freq as u64;
+        while (self.state as u64) >= x_max {
             self.output.push((self.state & 0xFF) as u8);
             self.state >>= 8;
         }
@@ -317,9 +318,11 @@ impl<'a> RansDecoder<'a> {
         // Look up symbol
         let (sym, info) = table.decode_symbol(slot);
 
-        // Update state: x = freq * (x >> PROB_BITS) + slot - cum_freq
-        let freq = info.freq as u32;
-        self.state = freq * (self.state >> PROB_BITS) + slot - info.cum_freq as u32;
+        // Update state: x = freq * (x >> PROB_BITS) + slot - cum_freq.
+        // Use u64 intermediate to avoid overflow with large freq values.
+        let freq = info.freq as u64;
+        self.state =
+            (freq * ((self.state >> PROB_BITS) as u64) + slot as u64 - info.cum_freq as u64) as u32;
 
         // Renormalize: read bytes while state is too small
         while self.state < RANS32_L && self.pos < self.input.len() {
@@ -533,9 +536,11 @@ impl<'a> SimdRansDecoder<'a> {
             let (sym, info) = table.decode_symbol(slot);
             *sym_out = sym;
 
-            // Update state: x = freq * (x >> PROB_BITS) + slot - cum_freq
-            let freq = info.freq as u32;
-            self.states[i] = freq * (self.states[i] >> PROB_BITS) + slot - info.cum_freq as u32;
+            // Update state: x = freq * (x >> PROB_BITS) + slot - cum_freq.
+            // Use u64 intermediate to avoid overflow with large freq values.
+            let freq = info.freq as u64;
+            self.states[i] = (freq * ((self.states[i] >> PROB_BITS) as u64) + slot as u64
+                - info.cum_freq as u64) as u32;
 
             // Renormalize
             while self.states[i] < RANS32_L && self.ptr < self.input.len() {

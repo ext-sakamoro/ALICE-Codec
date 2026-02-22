@@ -70,7 +70,7 @@ pub mod cache_bridge;
 
 // Re-exports
 pub use color::{rgb_to_ycocg_r, ycocg_r_to_rgb};
-pub use pipeline::{EncodedChunk, FrameDecoder, FrameEncoder};
+pub use pipeline::{CodecError, EncodedChunk, FrameDecoder, FrameEncoder, WaveletType};
 pub use quant::{AnalyticalRDO, Quantizer};
 pub use rans::{RansDecoder, RansEncoder, RansState};
 pub use segment::{segment_by_chroma, segment_by_motion, SegmentConfig, SegmentResult};
