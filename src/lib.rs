@@ -48,6 +48,7 @@ extern crate alloc;
 
 pub mod color;
 pub mod error;
+pub mod metrics;
 pub mod pipeline;
 pub mod quant;
 pub mod rans;
