@@ -30,9 +30,11 @@ impl SendPtr {
     fn new(ptr: *const u8, len: usize) -> Self {
         Self(ptr, len)
     }
+    /// # Safety
+    ///
+    /// Caller guarantees pointer is valid and the len matches the original slice.
+    /// Used only inside `py.allow_threads()` with data from a live NumPy array.
     #[inline]
-    // SAFETY: Caller guarantees pointer is valid and the len matches the original slice.
-    // Used only inside py.allow_threads() with data from a live NumPy array.
     unsafe fn as_slice(&self) -> &[u8] {
         std::slice::from_raw_parts(self.0, self.1)
     }
@@ -46,8 +48,10 @@ impl SendPtrI16 {
     fn new(ptr: *const i16, len: usize) -> Self {
         Self(ptr, len)
     }
+    /// # Safety
+    ///
+    /// Caller guarantees pointer is valid and len matches the original i16 slice.
     #[inline]
-    // SAFETY: Caller guarantees pointer is valid and len matches the original i16 slice.
     unsafe fn as_slice(&self) -> &[i16] {
         std::slice::from_raw_parts(self.0, self.1)
     }
