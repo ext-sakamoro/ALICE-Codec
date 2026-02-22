@@ -36,6 +36,8 @@
 //! > "Entropy is just a parallelizable number."
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 /// rANS state type.

@@ -21,6 +21,8 @@
 //! 2. **Chroma-Key**: YCoCg-R Cg threshold (green screen)
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::vec::Vec;

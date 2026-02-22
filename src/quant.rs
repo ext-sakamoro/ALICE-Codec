@@ -39,9 +39,6 @@
 //!
 //! > "Division is just multiplication by a magic number."
 
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-
 use crate::error::CodecError;
 use crate::SubBand3D;
 
@@ -408,7 +405,8 @@ impl AnalyticalRDO {
         // Quality 0 → ~0.1 bpp
         const RCP_100: f64 = 1.0 / 100.0;
         let quality = quality.min(100);
-        let target_bpp = 0.1 + (quality as f64 * RCP_100).powi(2) * 23.9;
+        let q = quality as f64 * RCP_100;
+        let target_bpp = 0.1 + q * q * 23.9;
 
         Self {
             target_bpp,
@@ -451,8 +449,8 @@ impl AnalyticalRDO {
     ///
     /// For Laplacian distribution: Q ≈ sqrt(12 × λ)
     fn lambda_to_step(&self, lambda: f64) -> i32 {
-        let step = (12.0 * lambda).sqrt();
-        (step.round() as i32).max(1)
+        let step = libm::sqrt(12.0 * lambda);
+        (libm::round(step) as i32).max(1)
     }
 
     /// Compute optimal quantizer for a sub-band
@@ -671,6 +669,11 @@ mod simd {
     }
 
     /// Approximate integer division using multiply and shift
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure AVX2 is available. All `__m256i` values must come
+    /// from valid AVX2 intrinsics.
     // SAFETY: Caller must ensure AVX2 is available. All __m256i values are valid
     // since they come from other AVX2 intrinsics.
     #[inline]

@@ -26,6 +26,8 @@
 //! We use fixed-point arithmetic with rounding for integer lifting.
 
 #[cfg(not(feature = "std"))]
+use alloc::vec;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 /// 1D Wavelet Transform

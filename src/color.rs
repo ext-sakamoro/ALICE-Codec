@@ -24,9 +24,6 @@
 //! - **Better decorrelation**: Y captures ~95% of energy
 //! - **Simple**: Only shifts and adds, no multiplication
 
-#[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
-
 use crate::error::CodecError;
 
 /// YCoCg-R pixel (Y, Co, Cg components)

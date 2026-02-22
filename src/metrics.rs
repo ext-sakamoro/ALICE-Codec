@@ -59,7 +59,7 @@ pub fn psnr(a: &[u8], b: &[u8]) -> Result<f64, CodecError> {
     if mse_val == 0.0 {
         return Ok(f64::INFINITY);
     }
-    Ok(10.0 * (255.0_f64 * 255.0 / mse_val).log10())
+    Ok(10.0 * libm::log10(255.0_f64 * 255.0 / mse_val))
 }
 
 #[cfg(test)]

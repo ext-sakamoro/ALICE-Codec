@@ -33,6 +33,7 @@ crypto = ["dep:alice-crypto", "std"]  # ALICE-Crypto AEAD encryption for bitstre
 cache = ["dep:alice-cache", "std"]  # ALICE-Cache decoded frame caching
 
 [dependencies]
+libm = "0.2"
 clap = { version = "4.5", features = ["derive"], optional = true }
 pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
 numpy = { version = "0.23", optional = true }
