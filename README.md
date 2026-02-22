@@ -1,10 +1,12 @@
 # ALICE-Codec
 
-**Hyper-Fast 3D Wavelet Video/Audio Codec** - *Optimized Edition*
+**Hyper-Fast 3D Wavelet Video/Audio Codec**
 
 > "Time is just another spatial dimension."
 
 A radical video/audio codec that eliminates I/P/B frames entirely. Instead, it treats video as a 3D volume $(x, y, t)$ and compresses it using **3D Integer Wavelet Transform** + **rANS entropy coding**.
+
+Author: Moroya Sakamoto
 
 ## The Revolution
 
@@ -28,6 +30,91 @@ ALICE-Codec:
 └─────────────────────────────────────────────────────┘
 ```
 
+## Quick Start
+
+### End-to-End Pipeline (Recommended)
+
+```rust
+use alice_codec::{FrameEncoder, FrameDecoder};
+
+// Encode: RGB frames → compressed bytes
+let encoder = FrameEncoder::new(80); // quality 0-100
+let chunk = encoder.encode(&rgb_bytes, width, height, frames);
+
+println!("Compressed: {} bytes", chunk.compressed_size());
+
+// Decode: compressed bytes → RGB frames
+let decoder = FrameDecoder::new();
+let recovered = decoder.decode(&chunk);
+```
+
+Each color channel (Y, Co, Cg) is processed independently through the full pipeline:
+
+```
+RGB → YCoCg-R → 3D Wavelet CDF 5/3 → Quantize → rANS → bytes
+```
+
+### Advanced Usage (Manual Pipeline)
+
+For fine-grained control over each stage:
+
+```rust
+use alice_codec::{
+    Wavelet3D,
+    color::{rgb_to_ycocg_r, ycocg_r_to_rgb, RGB},
+    quant::{FastQuantizer, AnalyticalRDO, to_symbols, from_symbols, build_histogram},
+    rans::{RansEncoder, RansDecoder, FrequencyTable},
+    SubBand3D,
+};
+
+// === Encode ===
+
+// 1. Color transform
+let mut y = vec![0i16; pixels.len()];
+let mut co = vec![0i16; pixels.len()];
+let mut cg = vec![0i16; pixels.len()];
+rgb_to_ycocg_r(&rgb_pixels, &mut y, &mut co, &mut cg);
+
+// 2. 3D Wavelet transform
+let wavelet = Wavelet3D::cdf97();
+let mut volume: Vec<i32> = y.iter().map(|&x| x as i32).collect();
+wavelet.forward(&mut volume, width, height, depth);
+
+// 3. Quantize (with magic number division)
+let rdo = AnalyticalRDO::with_quality(75);
+let quantizer = rdo.compute_quantizer(&volume, SubBand3D::LLL);
+let fast_q: FastQuantizer = quantizer.into();
+let mut quantized = vec![0i32; volume.len()];
+fast_q.quantize_buffer(&volume, &mut quantized);
+
+// 4. Entropy encode
+let mut symbols = vec![0u8; quantized.len()];
+to_symbols(&quantized, &mut symbols);
+let table = FrequencyTable::from_histogram(&build_histogram(&symbols));
+let mut encoder = RansEncoder::new();
+encoder.encode_symbols(&symbols, &table);
+let bitstream = encoder.finish();
+
+// === Decode ===
+
+// 1. Entropy decode
+let mut decoder = RansDecoder::new(&bitstream);
+let decoded_symbols = decoder.decode_n(symbols.len(), &table);
+
+// 2. Dequantize
+let mut dequantized = vec![0i32; quantized.len()];
+from_symbols(&decoded_symbols, &mut dequantized);
+fast_q.dequantize_buffer(&dequantized, &mut volume);
+
+// 3. Inverse wavelet
+wavelet.inverse(&mut volume, width, height, depth);
+
+// 4. Inverse color transform
+let y_out: Vec<i16> = volume.iter().map(|&x| x as i16).collect();
+let mut rgb_out = vec![RGB::new(0, 0, 0); pixels.len()];
+ycocg_r_to_rgb(&y_out, &co, &cg, &mut rgb_out);
+```
+
 ## Core Algorithms
 
 ### 1. 3D Integer CDF 9/7 Wavelet Transform
@@ -38,7 +125,7 @@ ALICE-Codec:
 - **Complexity**: O(N) vs O(N²) block matching
 
 ```
-        LLL ← Static background (high compression)
+        LLL  ← Static background (high compression)
        /
       L ── LLH ← Slow movement
      / \
@@ -80,36 +167,80 @@ Y  = t + (Cg >> 1);
 
 Better decorrelation than YCbCr. Lossless round-trip.
 
-## SIMD Optimizations
+## Architecture
 
-> "Division is just multiplication by a magic number."
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                         ALICE-Codec                              │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │                 pipeline.rs (E2E API)                       │  │
+│  │                                                             │  │
+│  │  FrameEncoder::encode(rgb, w, h, f) → EncodedChunk         │  │
+│  │  FrameDecoder::decode(chunk)        → RGB bytes             │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│       │             │              │             │                │
+│  ┌────▼─────┐  ┌────▼─────┐  ┌────▼─────┐  ┌───▼──────┐        │
+│  │color.rs  │  │wavelet.rs│  │ quant.rs │  │ rans.rs  │        │
+│  │          │  │          │  │          │  │          │        │
+│  │ YCoCg-R  │  │ 1D/2D/3D │  │ Dead-zone│  │ rANS     │        │
+│  │ Revers.  │  │ Integer  │  │ Analytic │  │ 4-stream │        │
+│  │ AVX2     │  │ Lifting  │  │ RDO      │  │ SIMD     │        │
+│  │          │  │ CDF 9/7  │  │ FastQ    │  │ AVX2     │        │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘        │
+│                                                                  │
+│  ┌────────────┐  ┌──────────────────────────────────────────┐   │
+│  │segment.rs  │  │ Bridges (feature-gated)                   │   │
+│  │            │  │                                           │   │
+│  │ Motion seg │  │ ml_bridge  → ALICE-ML  (ternary inference)│   │
+│  │ Chroma-key │  │ db_bridge  → ALICE-DB  (metrics storage)  │   │
+│  │ Morphology │  │ crypto_br  → ALICE-Crypto (AEAD encrypt) │   │
+│  │ RLE mask   │  │ cache_br   → ALICE-Cache (frame caching) │   │
+│  └────────────┘  └──────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## Modules
+
+| Module | File | Description |
+|--------|------|-------------|
+| **Pipeline** | `pipeline.rs` | End-to-end `FrameEncoder`/`FrameDecoder` API |
+| **Wavelet** | `wavelet.rs` | 1D/2D/3D Integer Lifting (Haar, CDF 5/3, CDF 9/7) |
+| **Color** | `color.rs` | YCoCg-R reversible color transform + AVX2 SIMD |
+| **Quantization** | `quant.rs` | Dead-zone quantizer, `FastQuantizer` (magic division), Analytical RDO |
+| **Entropy** | `rans.rs` | 32-bit rANS, Interleaved 4-stream, `SimdRansDecoder` |
+| **Segmentation** | `segment.rs` | Person segmentation (motion/chroma-key), separable morphology, RLE mask |
+| **Python** | `python.rs` | PyO3 + NumPy zero-copy bindings (GIL release) |
+
+## SIMD Optimizations
 
 ### SIMD-Interleaved rANS
 
-4つのrANSストリームをAVX2で同時処理:
+4 rANS streams processed in parallel using AVX2:
 
 ```rust
-// 4状態を__m128iにパック
+// 4 states packed into __m128i
 let state_vec = _mm_loadu_si128(states.as_ptr());
 
-// freq * (x >> PROB_BITS) を4並列で計算
+// freq * (x >> PROB_BITS) computed 4-wide
 let term1 = _mm_mullo_epi32(freq_vec, x_shifted);
 let term2 = _mm_add_epi32(term1, slots_vec);
 let new_state = _mm_sub_epi32(term2, cum_freq_vec);
 ```
 
-- テーブルルックアップ: スカラ（gatherは遅い）
-- 状態更新計算: SIMD（4並列）
-- 再正規化: スカラ（可変バイト消費）
+- Table lookup: scalar (gather is slow)
+- State update: SIMD (4-parallel)
+- Renormalization: scalar (variable byte consumption)
 
 ### Magic Number Division
 
-`idiv` 命令（~30 cycles）を乗算+シフト（~3 cycles）に置換:
+Replace `idiv` instruction (~30 cycles) with multiply + shift (~3 cycles):
 
 ```rust
 pub struct FastQuantizer {
-    reciprocal: u64,  // 1/step の固定小数点表現
-    shift: u32,       // 精度ビット
+    reciprocal: u64,  // Fixed-point representation of 1/step
+    shift: u32,       // Precision bits
     step: i32,
 }
 
@@ -121,125 +252,22 @@ fn fast_div(&self, x: u32) -> u32 {
 
 ## Features
 
-- **Blockless**: No 8×8/16×16 macroblocks. No blocking artifacts.
+- **Blockless**: No 8x8/16x16 macroblocks. No blocking artifacts.
 - **Scalable**: Decode at 1/2, 1/4 resolution by ignoring high-frequency sub-bands.
 - **Lossless/Lossy**: Same code path. Just change quantization.
-- **no_std**: Embeddable. No heap allocation in hot path.
+- **`no_std`**: Embeddable. No heap allocation in hot path.
 - **SIMD**: AVX2/NEON optimized lifting, rANS, and quantization.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                 ALICE-Codec (Optimized Edition)                 │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                    Encoder Pipeline                       │  │
-│  │                                                           │  │
-│  │  RGB → YCoCg-R → 3D Wavelet → FastQuantize → rANS →     │  │
-│  │                                              Bitstream    │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │                    Decoder Pipeline                       │  │
-│  │                                                           │  │
-│  │  Bitstream → SimdRansDecoder → Dequantize →              │  │
-│  │              Inverse 3D Wavelet → YCoCg-R → RGB          │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                                                                 │
-│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌──────────┐ │
-│  │ wavelet.rs │  │  color.rs  │  │  quant.rs  │  │ rans.rs  │ │
-│  │            │  │            │  │            │  │          │ │
-│  │ 1D/2D/3D   │  │ YCoCg-R    │  │ Dead-zone  │  │ rANS     │ │
-│  │ Integer    │  │ Reversible │  │ Analytical │  │ 4-stream │ │
-│  │ Lifting    │  │ Transform  │  │ RDO        │  │ SIMD     │ │
-│  │ CDF 9/7    │  │ AVX2 SIMD  │  │ FastQuant  │  │ AVX2     │ │
-│  └────────────┘  └────────────┘  └────────────┘  └──────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-## Modules
-
-| Module | File | Description |
-|--------|------|-------------|
-| **Wavelet** | `wavelet.rs` | 1D/2D/3D Integer Lifting (Haar, CDF 5/3, CDF 9/7) |
-| **Color** | `color.rs` | YCoCg-R reversible color transform + AVX2 SIMD |
-| **Quantization** | `quant.rs` | Dead-zone quantizer, FastQuantizer (magic division), Analytical RDO |
-| **Entropy** | `rans.rs` | 32-bit rANS, Interleaved 4-stream, SimdRansDecoder |
-| **Segmentation** | `segment.rs` | Person segmentation (motion/chroma-key), separable morphology, RLE mask |
-| **Python** | `python.rs` | PyO3 + NumPy zero-copy bindings (GIL release) |
-| **Crypto Bridge** | `crypto_bridge.rs` | AEAD encryption for bitstreams via ALICE-Crypto (feature: `crypto`) |
-
-## Quick Start
-
-```rust
-use alice_codec::{
-    Wavelet3D,
-    color::{rgb_to_ycocg_r, ycocg_r_to_rgb, RGB},
-    quant::{FastQuantizer, AnalyticalRDO, to_symbols, from_symbols},
-    rans::{RansEncoder, RansDecoder, FrequencyTable},
-    SubBand3D,
-};
-
-// === Encode ===
-
-// 1. Color transform
-let mut y = vec![0i16; pixels.len()];
-let mut co = vec![0i16; pixels.len()];
-let mut cg = vec![0i16; pixels.len()];
-rgb_to_ycocg_r(&rgb_pixels, &mut y, &mut co, &mut cg);
-
-// 2. 3D Wavelet transform
-let wavelet = Wavelet3D::cdf97();
-let mut volume: Vec<i32> = y.iter().map(|&x| x as i32).collect();
-wavelet.forward(&mut volume, width, height, depth);
-
-// 3. Quantize (with magic number division)
-let rdo = AnalyticalRDO::with_quality(75);
-let quantizer = rdo.compute_quantizer(&volume, SubBand3D::LLL);
-let fast_q: FastQuantizer = quantizer.into();
-let mut quantized = vec![0i32; volume.len()];
-fast_q.quantize_buffer(&volume, &mut quantized);
-
-// 4. Entropy encode
-let mut symbols = vec![0u8; quantized.len()];
-to_symbols(&quantized, &mut symbols);
-let table = FrequencyTable::from_histogram(&quant::build_histogram(&symbols));
-let mut encoder = RansEncoder::new();
-encoder.encode_symbols(&symbols, &table);
-let bitstream = encoder.finish();
-
-// === Decode ===
-
-// 1. Entropy decode
-let mut decoder = RansDecoder::new(&bitstream);
-let decoded_symbols = decoder.decode_n(symbols.len(), &table);
-
-// 2. Dequantize
-let mut dequantized = vec![0i32; quantized.len()];
-from_symbols(&decoded_symbols, &mut dequantized);
-fast_q.dequantize_buffer(&dequantized, &mut volume);
-
-// 3. Inverse wavelet
-wavelet.inverse(&mut volume, width, height, depth);
-
-// 4. Inverse color transform
-let y_out: Vec<i16> = volume.iter().map(|&x| x as i16).collect();
-let mut rgb_out = vec![RGB::new(0, 0, 0); pixels.len()];
-ycocg_r_to_rgb(&y_out, &co, &cg, &mut rgb_out);
-```
 
 ## Person Segmentation (Hybrid Streaming)
 
 ALICE-Codec includes a high-performance person segmentation module for **ALICE Hybrid Streaming** — where SDF-rendered backgrounds replace pixel data, and only the person region is wavelet-encoded.
 
-### Optimizations (カリカリ)
+### Optimization Techniques
 
 | Technique | Complexity | Effect |
 |-----------|-----------|--------|
 | Branchless frame diff (`saturating_sub \| saturating_sub`) | O(n) | Auto-vectorizes to VPSUBUSB + VPOR (~32 px/cycle) |
-| Separable morphological dilation | O(n) vs O(n×r²) | Distance-to-nearest forward+backward scan |
+| Separable morphological dilation | O(n) vs O(n*r^2) | Distance-to-nearest forward+backward scan |
 | Erosion via complement identity | O(n) | `erode(m) = NOT(dilate(NOT(m)))` |
 | Row-scan bounding box | O(n) | `position()`/`rposition()` per row, cache-friendly |
 | Scan-forward RLE encoding | O(n) | Bulk transition detection, auto-vectorizable |
@@ -285,40 +313,87 @@ rle_bytes = alice_codec.rle_encode_numpy(mask)
 | L3 | Batch API (whole-frame ops) | FFI amortization |
 | L4 | Rust backend (segment, wavelet, rANS) | Hardware-speed |
 
-## Performance Targets
+## Cross-Crate Bridges
 
-| Metric | Target | Optimization |
-|--------|--------|--------------|
-| Encode Speed | 100+ fps (1080p) | FastQuantizer (magic division) |
-| Decode Speed | 500+ fps | SimdRansDecoder (4-stream AVX2) |
-| Compression | Better than H.264 | Analytical RDO |
-| Latency | 64 frames (tunable) | Chunk-based processing |
+ALICE-Codec connects to other ALICE ecosystem crates via feature-gated bridge modules:
 
-## Trade-offs
+| Bridge | Feature | Target Crate | Description |
+|--------|---------|--------------|-------------|
+| `ml_bridge` | `ml` | [ALICE-ML](../ALICE-ML) | Ternary neural inference for sub-band classification and motion estimation |
+| `db_bridge` | `db` | [ALICE-DB](../ALICE-DB) | Time-series storage for bitrate, PSNR, and encode-time metrics |
+| `crypto_bridge` | `crypto` | [ALICE-Crypto](../ALICE-Crypto) | XChaCha20-Poly1305 AEAD encryption for compressed bitstreams |
+| `cache_bridge` | `cache` | [ALICE-Cache](../ALICE-Cache) | Decoded frame caching for instant scrubbing and seeking |
 
-This codec prioritizes **throughput** and **edit-friendliness** over **low latency**.
+### Crypto Bridge (feature: `crypto`)
 
-- ✅ Excellent for: Archival, editing, streaming (with buffer)
-- ⚠️ Not ideal for: Real-time video conferencing (64-frame latency)
+Wraps compressed bitstream data with authenticated encryption for secure storage or DRM delivery.
 
-## Building
+```rust
+use alice_codec::crypto_bridge::{seal_bitstream, open_bitstream, derive_key, content_hash};
 
-```bash
-# Standard build
-cargo build --release
+// Derive a key from passphrase
+let key = derive_key("alice-codec-v1", b"my-secret");
 
-# With SIMD optimizations
-cargo build --release --features simd
+// Encrypt compressed data
+let sealed = seal_bitstream(&compressed_bytes, &key)?;
 
-# With Python bindings (requires Python + maturin)
-pip install maturin
-maturin develop --release --features python
+// Content-addressed deduplication (no decryption needed)
+let hash = content_hash(&sealed.data);
 
-# Run tests (42 tests)
-cargo test
+// Decrypt
+let plaintext = open_bitstream(&sealed, &key)?;
+```
 
-# Run benchmarks
-cargo bench
+### ML Bridge (feature: `ml`)
+
+Uses ALICE-ML ternary (1.58-bit) neural inference for adaptive quantization and motion estimation:
+
+```rust
+use alice_codec::ml_bridge::{SubBandClassifier, MotionPredictor};
+
+// Sub-band classifier: predict optimal quantization strategy
+let clf = SubBandClassifier::new(&weights, 3, 2);
+let (class, confidence) = clf.classify(&[energy, variance, coherence]);
+
+// Motion predictor: predict motion vectors from block features
+let predictor = MotionPredictor::new(&weights, 4);
+let (dx, dy) = predictor.predict(&block_features);
+```
+
+### DB Bridge (feature: `db`)
+
+Records encoding metrics into ALICE-DB for monitoring dashboards:
+
+```rust
+use alice_codec::db_bridge::{CodecMetricsSink, CodecMetrics, FrameType};
+
+let sink = CodecMetricsSink::open("/tmp/codec_metrics")?;
+sink.record(&CodecMetrics {
+    timestamp_ms: 1700000000000,
+    bitrate_bps: 2_500_000.0,
+    psnr_db: 38.5,
+    encode_time_us: 1200.0,
+    frame_type: FrameType::Intra,
+})?;
+
+// Dashboard queries
+let avg_bitrate = sink.average_bitrate(start, end)?;
+let downsampled = sink.downsample_psnr(start, end, 1000)?;
+```
+
+### Cache Bridge (feature: `cache`)
+
+Caches decoded frames for instant replay without re-decoding:
+
+```rust
+use alice_codec::cache_bridge::FrameCache;
+
+let cache = FrameCache::new(64); // 64 frames, ~384 MB for 1080p
+cache.put(chunk_idx, frame_offset, quality, pixels, 1920, 1080);
+
+if let Some(frame) = cache.get(chunk_idx, frame_offset, quality) {
+    // Instant access, no decode needed
+}
 ```
 
 ## ASP Integration (ALICE-Streaming-Protocol)
@@ -352,42 +427,54 @@ ASP Video Encode:
 
 | Use Case | Recommended |
 |----------|-------------|
-| 3D video chunks (64-frame GoP) | ALICE-Codec standalone (`Wavelet3D`) |
+| 3D video chunks (64-frame GoP) | ALICE-Codec standalone (`FrameEncoder`) |
 | Single-frame in ASP transport | ASP `media-stack` feature (`Wavelet2D`) |
 | Person region in hybrid streaming | ASP hybrid + ALICE-Codec wavelet |
 
-## Cross-Crate Bridges
+## Performance Targets
 
-ALICE-Codec connects to other ALICE ecosystem crates via feature-gated bridge modules:
+| Metric | Target | Optimization |
+|--------|--------|--------------|
+| Encode Speed | 100+ fps (1080p) | `FastQuantizer` (magic division) |
+| Decode Speed | 500+ fps | `SimdRansDecoder` (4-stream AVX2) |
+| Compression | Better than H.264 | Analytical RDO |
+| Latency | 64 frames (tunable) | Chunk-based processing |
 
-| Bridge | Feature | Target Crate | Description |
-|--------|---------|--------------|-------------|
-| `crypto_bridge` | `crypto` | [ALICE-Crypto](../ALICE-Crypto) | XChaCha20-Poly1305 AEAD encryption for compressed bitstreams |
-| `cache_bridge` | `cache` | [ALICE-Cache](../ALICE-Cache) | Decoded frame caching for instant scrubbing and seeking |
+## Trade-offs
 
-### Crypto Bridge (feature: `crypto`)
+This codec prioritizes **throughput** and **edit-friendliness** over **low latency**.
 
-Wraps compressed bitstream data with authenticated encryption for secure storage or DRM delivery.
+- Excellent for: Archival, editing, streaming (with buffer)
+- Not ideal for: Real-time video conferencing (64-frame latency)
 
-```toml
-[dependencies]
-alice-codec = { path = "../ALICE-Codec", features = ["crypto"] }
-```
+## Quality Metrics
 
-```rust
-use alice_codec::crypto_bridge::{seal_bitstream, open_bitstream, derive_key, content_hash};
+| Metric | Value |
+|--------|-------|
+| Tests | 98 passing |
+| Clippy (default) | 0 warnings |
+| Clippy (pedantic) | 0 warnings |
+| Doc warnings | 0 |
+| SAFETY comments | All unsafe blocks covered |
 
-// Derive a key from passphrase
-let key = derive_key("alice-codec-v1", b"my-secret");
+## Building
 
-// Encrypt compressed data
-let sealed = seal_bitstream(&compressed_bytes, &key)?;
+```bash
+# Standard build
+cargo build --release
 
-// Content-addressed deduplication (no decryption needed)
-let hash = content_hash(&sealed.data);
+# With SIMD optimizations
+cargo build --release --features simd
 
-// Decrypt
-let plaintext = open_bitstream(&sealed, &key)?;
+# With Python bindings (requires Python + maturin)
+pip install maturin
+maturin develop --release --features python
+
+# Run tests (98 tests)
+cargo test
+
+# Run benchmarks
+cargo bench
 ```
 
 ## References
