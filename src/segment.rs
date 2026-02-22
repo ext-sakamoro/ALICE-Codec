@@ -11,9 +11,9 @@
 //!
 //! | Operation | Naive | Optimized | Speedup |
 //! |-----------|-------|-----------|---------|
-//! | Frame diff | i16 cast + abs + branch | saturating_sub ∣ (auto-vec) | ~8x |
-//! | Morphology | O(n × r²) nested loop | Separable O(n) distance scan | ~25x (r=2) |
-//! | BBox | 2D loop + per-pixel if | Row-scan + position/rposition | ~4x |
+//! | Frame diff | i16 cast + abs + branch | `saturating_sub` (auto-vec) | ~8x |
+//! | Morphology | O(n x r^2) nested loop | Separable O(n) distance scan | ~25x (r=2) |
+//! | `BBox` | 2D loop + per-pixel if | Row-scan + `position`/`rposition` | ~4x |
 //!
 //! # Segmentation Methods
 //!
@@ -65,6 +65,7 @@ pub struct SegmentResult {
 
 impl SegmentResult {
     /// Foreground coverage ratio (0.0 - 1.0)
+    #[must_use]
     pub fn coverage(&self) -> f32 {
         let total = self.width * self.height;
         if total == 0 { return 0.0; }
@@ -75,6 +76,7 @@ impl SegmentResult {
     /// Extract person pixels from an RGB frame using the mask.
     ///
     /// Returns only the pixels within the bounding box that are foreground.
+    #[must_use]
     pub fn extract_person_rgb(&self, frame_rgb: &[u8]) -> Vec<u8> {
         let [bx, by, bw, bh] = self.bbox;
         let mut person_pixels = Vec::with_capacity((bw * bh * 3) as usize);
@@ -95,9 +97,10 @@ impl SegmentResult {
         person_pixels
     }
 
-    /// Compress the binary mask using RLE encoding.
+    /// Compress the binary mask using run-length encoding.
     ///
-    /// Format: [run_length: u16 LE, value: u8]... (3 bytes per run)
+    /// Format: `[run_length: u16 LE, value: u8]...` (3 bytes per run)
+    #[must_use]
     pub fn rle_encode_mask(&self) -> Vec<u8> {
         if self.mask.is_empty() {
             return Vec::new();
@@ -130,10 +133,15 @@ impl SegmentResult {
 /// Motion-based person segmentation
 ///
 /// Performance model:
-/// - Frame diff: `|c-r| = c.saturating_sub(r) | r.saturating_sub(c)` → auto-vectorizes
-///   to VPSUBUSB + VPOR on AVX2 (~32 pixels/cycle)
-/// - Morphology: Separable distance scan O(n) instead of O(n×r²)
-/// - BBox: Row-scan with position()/rposition()
+/// - Frame diff: `|c-r| = c.saturating_sub(r) | r.saturating_sub(c)` auto-vectorizes
+///   to `VPSUBUSB` + `VPOR` on AVX2 (~32 pixels/cycle)
+/// - Morphology: Separable distance scan O(n) instead of O(n x r^2)
+/// - `BBox`: Row-scan with `position()`/`rposition()`
+///
+/// # Panics
+///
+/// Panics if `current` or `reference` is shorter than `width * height`.
+#[must_use]
 pub fn segment_by_motion(
     current: &[u8],
     reference: &[u8],
@@ -185,6 +193,7 @@ pub fn segment_by_motion(
 }
 
 /// YCoCg-R chroma-key segmentation (for green screen setups).
+#[must_use]
 pub fn segment_by_chroma(
     _y: &[i16],
     _co: &[i16],
@@ -218,6 +227,7 @@ pub fn segment_by_chroma(
 }
 
 /// Crop a frame to only the person's bounding box region.
+#[must_use]
 pub fn crop_to_bbox(frame: &[u8], frame_width: u32, bbox: &[u32; 4]) -> Vec<u8> {
     let [bx, by, bw, bh] = *bbox;
     let mut cropped = Vec::with_capacity((bw * bh) as usize);
@@ -313,12 +323,12 @@ fn dilate_mask_separable(mask: &mut [u8], w: usize, h: usize, r: usize) {
 /// Uses the identity: erosion(mask) = complement(dilation(complement(mask)))
 fn erode_mask_separable(mask: &mut [u8], w: usize, h: usize, r: usize) {
     let n = w * h;
-    // Complement: 0↔1
-    for v in mask[..n].iter_mut() { *v ^= 1; }
+    // Complement: 0 <-> 1
+    for v in &mut mask[..n] { *v ^= 1; }
     // Dilate the complemented mask
     dilate_mask_separable(mask, w, h, r);
     // Complement back
-    for v in mask[..n].iter_mut() { *v ^= 1; }
+    for v in &mut mask[..n] { *v ^= 1; }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -564,5 +574,131 @@ mod tests {
         let (bbox, count) = compute_bbox_fast(&mask, 10, 10);
         assert_eq!(bbox, [3, 2, 5, 5]);
         assert_eq!(count, 25);
+    }
+
+    #[test]
+    fn test_coverage_zero_dimensions() {
+        let result = SegmentResult {
+            mask: vec![],
+            bbox: [0, 0, 0, 0],
+            foreground_count: 0,
+            width: 0,
+            height: 0,
+        };
+        assert_eq!(result.coverage(), 0.0);
+    }
+
+    #[test]
+    fn test_full_foreground_mask() {
+        // Every pixel is foreground
+        let width = 8u32;
+        let height = 8u32;
+        let reference = vec![0u8; 64];
+        let current = vec![255u8; 64];
+        let config = SegmentConfig {
+            motion_threshold: 50,
+            dilate_radius: 0,
+            erode_radius: 0,
+            ..Default::default()
+        };
+
+        let result = segment_by_motion(&current, &reference, width, height, &config);
+        assert_eq!(result.foreground_count, 64);
+        assert!((result.coverage() - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_rle_encode_empty_mask() {
+        let result = SegmentResult {
+            mask: vec![],
+            bbox: [0, 0, 0, 0],
+            foreground_count: 0,
+            width: 0,
+            height: 0,
+        };
+        let rle = result.rle_encode_mask();
+        assert!(rle.is_empty());
+    }
+
+    #[test]
+    fn test_rle_encode_all_zeros() {
+        let result = SegmentResult {
+            mask: vec![0u8; 100],
+            bbox: [0, 0, 0, 0],
+            foreground_count: 0,
+            width: 10,
+            height: 10,
+        };
+        let rle = result.rle_encode_mask();
+        // Should be a single run of 100 zeros: 3 bytes
+        assert_eq!(rle.len(), 3);
+        let run_len = u16::from_le_bytes([rle[0], rle[1]]);
+        assert_eq!(run_len, 100);
+        assert_eq!(rle[2], 0);
+    }
+
+    #[test]
+    fn test_rle_encode_all_ones() {
+        let result = SegmentResult {
+            mask: vec![1u8; 50],
+            bbox: [0, 0, 10, 5],
+            foreground_count: 50,
+            width: 10,
+            height: 5,
+        };
+        let rle = result.rle_encode_mask();
+        // Single run of 50 ones: 3 bytes
+        assert_eq!(rle.len(), 3);
+        let run_len = u16::from_le_bytes([rle[0], rle[1]]);
+        assert_eq!(run_len, 50);
+        assert_eq!(rle[2], 1);
+    }
+
+    #[test]
+    fn test_segment_config_default() {
+        let config = SegmentConfig::default();
+        assert_eq!(config.motion_threshold, 25);
+        assert_eq!(config.min_region_size, 100);
+        assert_eq!(config.dilate_radius, 2);
+        assert_eq!(config.erode_radius, 1);
+    }
+
+    #[test]
+    fn test_crop_empty_bbox() {
+        let frame = vec![42u8; 100];
+        let bbox = [0, 0, 0, 0];
+        let cropped = crop_to_bbox(&frame, 10, &bbox);
+        assert!(cropped.is_empty());
+    }
+
+    #[test]
+    fn test_chroma_segmentation() {
+        let width = 10u32;
+        let height = 5u32;
+        let total = (width * height) as usize;
+
+        let y = vec![128i16; total];
+        let co = vec![0i16; total];
+        // Cg > threshold = green screen (background), Cg <= threshold = foreground
+        let mut cg = vec![100i16; total]; // all above threshold → not foreground
+        // Place foreground in center rows
+        for row in 1..4 {
+            for col in 2..8 {
+                let idx = row * width as usize + col;
+                cg[idx] = -10; // below threshold → foreground
+            }
+        }
+
+        let result = segment_by_chroma(&y, &co, &cg, width, height, 50);
+        assert!(result.foreground_count > 0, "Should detect foreground pixels");
+    }
+
+    #[test]
+    fn test_bbox_single_pixel() {
+        let mut mask = vec![0u8; 100]; // 10x10
+        mask[55] = 1; // pixel at (5, 5)
+        let (bbox, count) = compute_bbox_fast(&mask, 10, 10);
+        assert_eq!(count, 1);
+        assert_eq!(bbox, [5, 5, 1, 1]);
     }
 }

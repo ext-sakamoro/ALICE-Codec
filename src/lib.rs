@@ -32,6 +32,16 @@
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(
+    clippy::similar_names,
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    clippy::cast_lossless,
+    clippy::cast_possible_wrap,
+    clippy::unused_self,
+)]
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
@@ -41,6 +51,7 @@ pub mod color;
 pub mod rans;
 pub mod quant;
 pub mod segment;
+pub mod pipeline;
 
 #[cfg(feature = "python")]
 mod python;
@@ -63,6 +74,7 @@ pub use color::{rgb_to_ycocg_r, ycocg_r_to_rgb};
 pub use rans::{RansEncoder, RansDecoder, RansState};
 pub use quant::{Quantizer, AnalyticalRDO};
 pub use segment::{SegmentConfig, SegmentResult, segment_by_motion, segment_by_chroma};
+pub use pipeline::{EncodedChunk, FrameEncoder, FrameDecoder};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -94,28 +106,27 @@ pub enum SubBand3D {
 
 impl SubBand3D {
     /// Returns true if this sub-band contains temporal high-frequency (motion)
+    #[must_use]
     #[inline]
     pub const fn is_temporal_high(&self) -> bool {
         matches!(self, SubBand3D::LLH | SubBand3D::LHH | SubBand3D::HLH | SubBand3D::HHH)
     }
 
     /// Returns true if this is the lowest frequency sub-band
+    #[must_use]
     #[inline]
     pub const fn is_dc(&self) -> bool {
         matches!(self, SubBand3D::LLL)
     }
 
     /// Recommended quantization strength (higher = more aggressive)
+    #[must_use]
     #[inline]
     pub const fn quant_strength(&self) -> u8 {
         match self {
             SubBand3D::LLL => 1,   // Preserve DC
-            SubBand3D::LLH => 2,
-            SubBand3D::LHL => 2,
-            SubBand3D::LHH => 4,
-            SubBand3D::HLL => 2,
-            SubBand3D::HLH => 4,
-            SubBand3D::HHL => 4,
+            SubBand3D::LLH | SubBand3D::LHL | SubBand3D::HLL => 2,
+            SubBand3D::LHH | SubBand3D::HLH | SubBand3D::HHL => 4,
             SubBand3D::HHH => 8,   // Most aggressive
         }
     }
@@ -140,5 +151,66 @@ mod tests {
     fn test_quant_strength() {
         assert_eq!(SubBand3D::LLL.quant_strength(), 1);
         assert_eq!(SubBand3D::HHH.quant_strength(), 8);
+    }
+
+    #[test]
+    fn test_subband_all_variants_temporal_high() {
+        // Exhaustive: exactly 4 sub-bands are temporal-high
+        let temporal_high = [SubBand3D::LLH, SubBand3D::LHH, SubBand3D::HLH, SubBand3D::HHH];
+        let temporal_low  = [SubBand3D::LLL, SubBand3D::LHL, SubBand3D::HLL, SubBand3D::HHL];
+
+        for sb in temporal_high {
+            assert!(sb.is_temporal_high(), "{:?} should be temporal-high", sb);
+        }
+        for sb in temporal_low {
+            assert!(!sb.is_temporal_high(), "{:?} should NOT be temporal-high", sb);
+        }
+    }
+
+    #[test]
+    fn test_subband_only_lll_is_dc() {
+        let all = [
+            SubBand3D::LLL, SubBand3D::LLH, SubBand3D::LHL, SubBand3D::LHH,
+            SubBand3D::HLL, SubBand3D::HLH, SubBand3D::HHL, SubBand3D::HHH,
+        ];
+        for sb in all {
+            if matches!(sb, SubBand3D::LLL) {
+                assert!(sb.is_dc());
+            } else {
+                assert!(!sb.is_dc(), "{:?} should not be DC", sb);
+            }
+        }
+    }
+
+    #[test]
+    fn test_quant_strength_all_subbands() {
+        // quant_strength must be monotonically non-decreasing with frequency content
+        assert_eq!(SubBand3D::LLL.quant_strength(), 1);
+        assert_eq!(SubBand3D::LLH.quant_strength(), 2);
+        assert_eq!(SubBand3D::LHL.quant_strength(), 2);
+        assert_eq!(SubBand3D::LHH.quant_strength(), 4);
+        assert_eq!(SubBand3D::HLL.quant_strength(), 2);
+        assert_eq!(SubBand3D::HLH.quant_strength(), 4);
+        assert_eq!(SubBand3D::HHL.quant_strength(), 4);
+        assert_eq!(SubBand3D::HHH.quant_strength(), 8);
+    }
+
+    #[test]
+    fn test_subband_repr_u8_ordering() {
+        // Verify repr(u8) values match expected ordering 0..7
+        assert_eq!(SubBand3D::LLL as u8, 0);
+        assert_eq!(SubBand3D::LLH as u8, 1);
+        assert_eq!(SubBand3D::LHL as u8, 2);
+        assert_eq!(SubBand3D::LHH as u8, 3);
+        assert_eq!(SubBand3D::HLL as u8, 4);
+        assert_eq!(SubBand3D::HLH as u8, 5);
+        assert_eq!(SubBand3D::HHL as u8, 6);
+        assert_eq!(SubBand3D::HHH as u8, 7);
+    }
+
+    #[test]
+    fn test_version_and_constants() {
+        assert!(!VERSION.is_empty());
+        assert_eq!(DEFAULT_CHUNK_SIZE, 64);
     }
 }

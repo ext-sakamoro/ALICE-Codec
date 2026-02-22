@@ -55,6 +55,7 @@ pub struct RansSymbol {
 }
 
 impl RansSymbol {
+    #[must_use]
     #[inline]
     pub const fn new(cum_freq: u16, freq: u16) -> Self {
         Self { cum_freq, freq }
@@ -73,7 +74,13 @@ pub struct FrequencyTable {
 impl FrequencyTable {
     /// Create frequency table from histogram
     ///
-    /// Frequencies are normalized to sum to PROB_SCALE.
+    /// Frequencies are normalized to sum to `PROB_SCALE`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the normalized frequency adjustment overflows after adjusting
+    /// the last symbol to ensure the total equals `PROB_SCALE`.
+    #[must_use]
     pub fn from_histogram(histogram: &[u32]) -> Self {
         let n_symbols = histogram.len();
         let total: u64 = histogram.iter().map(|&x| x as u64).sum();
@@ -88,7 +95,7 @@ impl FrequencyTable {
         let mut cum_freq = 0u32;
         let mut normalized_total = 0u32;
 
-        for &count in histogram.iter() {
+        for &count in histogram {
             let freq = if count == 0 {
                 1 // Minimum frequency to avoid division by zero
             } else {
@@ -112,7 +119,7 @@ impl FrequencyTable {
             let start = entry.cum_freq as usize;
             let end = (start + entry.freq as usize).min(PROB_SCALE as usize);
             if start < end {
-                for slot in cum_to_sym[start..end].iter_mut() {
+                for slot in &mut cum_to_sym[start..end] {
                     *slot = sym as u8;
                 }
             }
@@ -125,6 +132,11 @@ impl FrequencyTable {
     }
 
     /// Create uniform distribution
+    ///
+    /// # Panics
+    ///
+    /// Panics if the frequency adjustment for the last symbol underflows.
+    #[must_use]
     pub fn uniform(n_symbols: usize) -> Self {
         let freq_per_symbol = (PROB_SCALE as usize / n_symbols) as u16;
         let mut symbols = Vec::with_capacity(n_symbols);
@@ -146,7 +158,7 @@ impl FrequencyTable {
             let start = entry.cum_freq as usize;
             let end = (start + entry.freq as usize).min(PROB_SCALE as usize);
             if start < end {
-                for slot in cum_to_sym[start..end].iter_mut() {
+                for slot in &mut cum_to_sym[start..end] {
                     *slot = sym as u8;
                 }
             }
@@ -159,12 +171,14 @@ impl FrequencyTable {
     }
 
     /// Get symbol info for encoding
+    #[must_use]
     #[inline]
     pub fn get_symbol(&self, sym: u8) -> RansSymbol {
         self.symbols[sym as usize]
     }
 
     /// Decode symbol from cumulative frequency
+    #[must_use]
     #[inline]
     pub fn decode_symbol(&self, cum_freq: u32) -> (u8, RansSymbol) {
         let sym = self.cum_to_sym[cum_freq as usize];
@@ -172,12 +186,14 @@ impl FrequencyTable {
     }
 
     /// Number of symbols in the table
+    #[must_use]
     #[inline]
     pub fn len(&self) -> usize {
         self.symbols.len()
     }
 
     /// Check if table is empty
+    #[must_use]
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.symbols.is_empty()
@@ -195,6 +211,7 @@ const RANS32_L: u32 = 1 << 23; // Lower bound for state
 
 impl RansEncoder {
     /// Create new encoder
+    #[must_use]
     pub fn new() -> Self {
         Self {
             state: RANS32_L,
@@ -203,6 +220,7 @@ impl RansEncoder {
     }
 
     /// Create encoder with pre-allocated output buffer
+    #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             state: RANS32_L,
@@ -241,6 +259,7 @@ impl RansEncoder {
     }
 
     /// Finish encoding and return the bitstream
+    #[must_use]
     pub fn finish(mut self) -> Vec<u8> {
         // Flush remaining state (4 bytes for 32-bit state)
         self.output.push((self.state & 0xFF) as u8);
@@ -269,6 +288,7 @@ pub struct RansDecoder<'a> {
 
 impl<'a> RansDecoder<'a> {
     /// Create decoder from bitstream
+    #[must_use]
     pub fn new(input: &'a [u8]) -> Self {
         let mut decoder = Self {
             state: 0,
@@ -324,6 +344,7 @@ impl<'a> RansDecoder<'a> {
     }
 
     /// Check if more data is available
+    #[must_use]
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.pos >= self.input.len() && self.state < RANS32_L
@@ -338,6 +359,7 @@ pub struct InterleavedRansEncoder {
 
 impl InterleavedRansEncoder {
     /// Create new interleaved encoder
+    #[must_use]
     pub fn new() -> Self {
         Self {
             encoders: [
@@ -367,11 +389,12 @@ impl InterleavedRansEncoder {
     }
 
     /// Finish encoding and interleave outputs
+    #[must_use]
     pub fn finish(self) -> Vec<u8> {
         let outputs: Vec<Vec<u8>> = self
             .encoders
             .into_iter()
-            .map(|e| e.finish())
+            .map(RansEncoder::finish)
             .collect();
 
         // Store stream lengths + symbol counts + interleaved data
@@ -412,6 +435,7 @@ pub struct InterleavedRansDecoder<'a> {
 
 impl<'a> InterleavedRansDecoder<'a> {
     /// Create decoder from interleaved bitstream
+    #[must_use]
     pub fn new(input: &'a [u8]) -> Self {
         // Read stream lengths
         let len0 = u32::from_le_bytes([input[0], input[1], input[2], input[3]]) as usize;
@@ -482,6 +506,7 @@ pub struct SimdRansDecoder<'a> {
 
 impl<'a> SimdRansDecoder<'a> {
     /// Create new SIMD decoder from 4-stream interleaved bitstream
+    #[must_use]
     pub fn new(input: &'a [u8]) -> Self {
         let mut ptr = 0;
         let mut states = [0u32; 4];
@@ -531,6 +556,10 @@ impl<'a> SimdRansDecoder<'a> {
     }
 
     /// Decode n symbols (must be multiple of 4)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `n` is not a multiple of 4.
     pub fn decode_n(&mut self, n: usize, table: &FrequencyTable) -> Vec<u8> {
         assert!(n.is_multiple_of(4), "n must be multiple of 4 for SIMD decoder");
         let mut output = Vec::with_capacity(n);
@@ -767,5 +796,106 @@ mod tests {
         let expected = decoder.decode_n(original.len(), &table);
 
         assert_eq!(original, expected, "Regular decoder failed");
+    }
+
+    #[test]
+    fn test_encode_decode_single_symbol() {
+        // Encode and decode just a single symbol
+        let table = FrequencyTable::uniform(256);
+        let original = [0u8];
+
+        let mut encoder = RansEncoder::new();
+        encoder.encode_symbols(&original, &table);
+        let encoded = encoder.finish();
+
+        let mut decoder = RansDecoder::new(&encoded);
+        let decoded = decoder.decode_n(1, &table);
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn test_encode_decode_all_same_symbol() {
+        // All identical symbols - should compress well
+        let table = FrequencyTable::uniform(256);
+        let original = vec![42u8; 500];
+
+        let mut encoder = RansEncoder::new();
+        encoder.encode_symbols(&original, &table);
+        let encoded = encoder.finish();
+
+        let mut decoder = RansDecoder::new(&encoded);
+        let decoded = decoder.decode_n(original.len(), &table);
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn test_frequency_table_from_zero_histogram() {
+        // All-zero histogram should fall back to uniform
+        let histogram = [0u32; 256];
+        let table = FrequencyTable::from_histogram(&histogram);
+        assert_eq!(table.len(), 256);
+        assert!(!table.is_empty());
+    }
+
+    #[test]
+    fn test_frequency_table_single_dominant_symbol() {
+        // One dominant symbol with very high count
+        let mut histogram = [0u32; 256];
+        histogram[100] = 1000;
+        let table = FrequencyTable::from_histogram(&histogram);
+
+        // Verify the table has 256 entries (all symbols get minimum freq=1)
+        assert_eq!(table.len(), 256);
+
+        // Dominant symbol should have the highest frequency
+        let dominant = table.get_symbol(100);
+        let non_dominant = table.get_symbol(0);
+        assert!(dominant.freq >= non_dominant.freq,
+            "Dominant symbol freq {} should be >= non-dominant freq {}",
+            dominant.freq, non_dominant.freq);
+    }
+
+    #[test]
+    fn test_rans_encoder_with_capacity() {
+        let table = FrequencyTable::uniform(256);
+        let original: Vec<u8> = (0..100).map(|i| (i % 256) as u8).collect();
+
+        let mut encoder = RansEncoder::with_capacity(1024);
+        encoder.encode_symbols(&original, &table);
+        let encoded = encoder.finish();
+
+        let mut decoder = RansDecoder::new(&encoded);
+        let decoded = decoder.decode_n(original.len(), &table);
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn test_rans_symbol_new() {
+        let sym = RansSymbol::new(10, 20);
+        assert_eq!(sym.cum_freq, 10);
+        assert_eq!(sym.freq, 20);
+    }
+
+    #[test]
+    fn test_uniform_table_small() {
+        // Very small alphabet
+        let table = FrequencyTable::uniform(2);
+        assert_eq!(table.len(), 2);
+
+        // Each symbol should get roughly half the probability space
+        let s0 = table.get_symbol(0);
+        let s1 = table.get_symbol(1);
+        assert_eq!(s0.cum_freq, 0);
+        assert!(s0.freq as u32 + s1.freq as u32 == PROB_SCALE);
+    }
+
+    #[test]
+    fn test_interleaved_encoder_default() {
+        let _ = InterleavedRansEncoder::default();
+    }
+
+    #[test]
+    fn test_rans_encoder_default() {
+        let _ = RansEncoder::default();
     }
 }

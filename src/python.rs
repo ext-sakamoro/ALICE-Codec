@@ -16,20 +16,27 @@ use crate::segment::{SegmentConfig, SegmentResult, segment_by_motion, segment_by
 
 /// Wrapper for raw pointer that implements Send (for GIL release)
 struct SendPtr(*const u8, usize);
+// SAFETY: The raw pointer is derived from a NumPy array that is kept alive by Python's GC.
+// The pointer is only used within py.allow_threads() while the GIL is released, and the
+// NumPy array reference guarantees validity for the duration.
 unsafe impl Send for SendPtr {}
 impl SendPtr {
     #[inline]
     fn new(ptr: *const u8, len: usize) -> Self { Self(ptr, len) }
     #[inline]
+    // SAFETY: Caller guarantees pointer is valid and the len matches the original slice.
+    // Used only inside py.allow_threads() with data from a live NumPy array.
     unsafe fn as_slice(&self) -> &[u8] { std::slice::from_raw_parts(self.0, self.1) }
 }
 
 struct SendPtrI16(*const i16, usize);
+// SAFETY: Same rationale as SendPtr — derived from NumPy i16 array kept alive by Python GC.
 unsafe impl Send for SendPtrI16 {}
 impl SendPtrI16 {
     #[inline]
     fn new(ptr: *const i16, len: usize) -> Self { Self(ptr, len) }
     #[inline]
+    // SAFETY: Caller guarantees pointer is valid and len matches the original i16 slice.
     unsafe fn as_slice(&self) -> &[i16] { std::slice::from_raw_parts(self.0, self.1) }
 }
 
@@ -74,6 +81,8 @@ fn segment_motion_numpy<'py>(
     let ref_send = SendPtr::new(ref_slice.as_ptr(), ref_slice.len());
 
     let result = py.allow_threads(move || {
+        // SAFETY: Pointers derived from C-contiguous NumPy arrays verified above.
+        // Arrays are kept alive by Python GC; GIL release does not deallocate them.
         let curr = unsafe { curr_send.as_slice() };
         let ref_ = unsafe { ref_send.as_slice() };
         let config = SegmentConfig {
@@ -132,6 +141,8 @@ fn segment_chroma_numpy<'py>(
     let cg_send = SendPtrI16::new(cg_slice.as_ptr(), cg_slice.len());
 
     let result = py.allow_threads(move || {
+        // SAFETY: Pointers derived from C-contiguous NumPy i16 arrays verified above.
+        // Python GC keeps arrays alive during GIL release.
         let y = unsafe { y_send.as_slice() };
         let co = unsafe { co_send.as_slice() };
         let cg = unsafe { cg_send.as_slice() };
@@ -189,7 +200,11 @@ fn paste_bbox_numpy(
     if bbox.len() != 4 {
         return Err(pyo3::exceptions::PyValueError::new_err("bbox must have 4 elements"));
     }
+    // SAFETY: frame is a valid PyArray2 bound to the Python interpreter.
+    // dims() returns the array shape which is always valid for a 2D array.
     let w = unsafe { frame.dims()[1] } as u32;
+    // SAFETY: frame is a valid, C-contiguous PyArray2<u8>. We have exclusive access
+    // since this is the only mutable reference and Python GIL is held.
     let slice = unsafe { frame.as_slice_mut() }
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("{:?}", e)))?;
     let bbox_arr = [bbox[0], bbox[1], bbox[2], bbox[3]];

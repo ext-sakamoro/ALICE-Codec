@@ -44,6 +44,7 @@ pub struct RGB {
 }
 
 impl RGB {
+    #[must_use]
     #[inline]
     pub const fn new(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b }
@@ -51,6 +52,7 @@ impl RGB {
 }
 
 impl YCoCgR {
+    #[must_use]
     #[inline]
     pub const fn new(y: i16, co: i16, cg: i16) -> Self {
         Self { y, co, cg }
@@ -67,6 +69,7 @@ impl YCoCgR {
 /// let rgb = RGB::new(100, 150, 200);
 /// let ycocg = rgb_to_ycocg_r_pixel(rgb);
 /// ```
+#[must_use]
 #[inline]
 pub fn rgb_to_ycocg_r_pixel(rgb: RGB) -> YCoCgR {
     let r = rgb.r as i16;
@@ -91,6 +94,7 @@ pub fn rgb_to_ycocg_r_pixel(rgb: RGB) -> YCoCgR {
 /// let ycocg = YCoCgR::new(150, -100, 0);
 /// let rgb = ycocg_r_to_rgb_pixel(ycocg);
 /// ```
+#[must_use]
 #[inline]
 pub fn ycocg_r_to_rgb_pixel(ycocg: YCoCgR) -> RGB {
     let t = ycocg.y - (ycocg.cg >> 1);
@@ -157,6 +161,11 @@ pub fn ycocg_r_to_rgb(y: &[i16], co: &[i16], cg: &[i16], rgb_out: &mut [RGB]) {
 /// Convert interleaved RGB bytes to planar YCoCg-R
 ///
 /// Input format: [R0, G0, B0, R1, G1, B1, ...]
+///
+/// # Panics
+///
+/// Panics if `rgb_bytes.len()` is not a multiple of 3, or if any output
+/// buffer is smaller than the number of pixels.
 pub fn rgb_bytes_to_ycocg_r(
     rgb_bytes: &[u8],
     y_out: &mut [i16],
@@ -188,6 +197,11 @@ pub fn rgb_bytes_to_ycocg_r(
 /// Convert planar YCoCg-R to interleaved RGB bytes
 ///
 /// Output format: [R0, G0, B0, R1, G1, B1, ...]
+///
+/// # Panics
+///
+/// Panics if channels have different lengths or `rgb_out` is smaller than
+/// `y.len() * 3`.
 pub fn ycocg_r_to_rgb_bytes(y: &[i16], co: &[i16], cg: &[i16], rgb_out: &mut [u8]) {
     assert_eq!(y.len(), co.len());
     assert_eq!(y.len(), cg.len());
@@ -426,5 +440,72 @@ mod tests {
         assert_eq!(ycocg.co, 0);
         assert_eq!(ycocg.cg, 0);
         assert_eq!(ycocg.y, 128);
+    }
+
+    #[test]
+    fn test_empty_buffer_conversion() {
+        // Zero-length buffers should work without panic
+        let rgb: [RGB; 0] = [];
+        let mut y = [];
+        let mut co = [];
+        let mut cg = [];
+        let mut rgb_out: [RGB; 0] = [];
+
+        rgb_to_ycocg_r(&rgb, &mut y, &mut co, &mut cg);
+        ycocg_r_to_rgb(&y, &co, &cg, &mut rgb_out);
+    }
+
+    #[test]
+    fn test_empty_byte_conversion() {
+        let rgb_bytes: [u8; 0] = [];
+        let mut y: [i16; 0] = [];
+        let mut co: [i16; 0] = [];
+        let mut cg: [i16; 0] = [];
+        let mut rgb_out: [u8; 0] = [];
+
+        rgb_bytes_to_ycocg_r(&rgb_bytes, &mut y, &mut co, &mut cg);
+        ycocg_r_to_rgb_bytes(&y, &co, &cg, &mut rgb_out);
+    }
+
+    #[test]
+    fn test_pure_red_pixel() {
+        let rgb = RGB::new(255, 0, 0);
+        let ycocg = rgb_to_ycocg_r_pixel(rgb);
+        // Co = R - B = 255, t = 0 + 127 = 127, Cg = 0 - 127 = -127, Y = 127 + (-64) = 63
+        assert_eq!(ycocg.co, 255);
+        let back = ycocg_r_to_rgb_pixel(ycocg);
+        assert_eq!(back, rgb);
+    }
+
+    #[test]
+    fn test_pure_green_pixel() {
+        let rgb = RGB::new(0, 255, 0);
+        let ycocg = rgb_to_ycocg_r_pixel(rgb);
+        let back = ycocg_r_to_rgb_pixel(ycocg);
+        assert_eq!(back, rgb);
+        // Green should produce high Cg
+        assert!(ycocg.cg > 0, "Cg should be positive for pure green");
+    }
+
+    #[test]
+    fn test_pure_blue_pixel() {
+        let rgb = RGB::new(0, 0, 255);
+        let ycocg = rgb_to_ycocg_r_pixel(rgb);
+        let back = ycocg_r_to_rgb_pixel(ycocg);
+        assert_eq!(back, rgb);
+        // Blue: Co = R - B = -255 (negative)
+        assert!(ycocg.co < 0, "Co should be negative for pure blue");
+    }
+
+    #[test]
+    fn test_grayscale_decorrelation() {
+        // All grayscale pixels should have Co=0, Cg=0
+        for v in (0..=255).step_by(5) {
+            let rgb = RGB::new(v, v, v);
+            let ycocg = rgb_to_ycocg_r_pixel(rgb);
+            assert_eq!(ycocg.co, 0, "Co should be 0 for gray level {}", v);
+            assert_eq!(ycocg.cg, 0, "Cg should be 0 for gray level {}", v);
+            assert_eq!(ycocg.y, v as i16, "Y should equal gray level {}", v);
+        }
     }
 }

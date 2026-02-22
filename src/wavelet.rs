@@ -5,7 +5,7 @@
 //!
 //! # Lifting Scheme
 //!
-//! Traditional convolution-based wavelet: O(N × filter_length)
+//! Traditional convolution-based wavelet: O(N x `filter_length`)
 //! Lifting scheme: O(N) with in-place operation
 //!
 //! ```text
@@ -48,6 +48,7 @@ impl Wavelet1D {
     /// Create CDF 9/7 wavelet (JPEG2000 lossy)
     ///
     /// Integer approximation of the biorthogonal 9/7 filter.
+    #[must_use]
     pub fn cdf97() -> Self {
         // Fixed-point coefficients (scaled by 4096 = 2^12)
         // α = -1.586134342 → -6497
@@ -65,6 +66,7 @@ impl Wavelet1D {
     }
 
     /// Create Haar wavelet (simplest, for testing)
+    #[must_use]
     pub fn haar() -> Self {
         Self {
             steps: vec![
@@ -75,6 +77,7 @@ impl Wavelet1D {
     }
 
     /// Create 5/3 wavelet (JPEG2000 lossless)
+    #[must_use]
     pub fn cdf53() -> Self {
         // Integer 5/3 wavelet: perfect reconstruction guaranteed
         Self {
@@ -215,16 +218,19 @@ pub struct Wavelet2D {
 
 impl Wavelet2D {
     /// Create 2D wavelet from 1D wavelet
+    #[must_use]
     pub fn new(wavelet_1d: Wavelet1D) -> Self {
         Self { wavelet_1d }
     }
 
     /// Create 2D CDF 9/7 wavelet
+    #[must_use]
     pub fn cdf97() -> Self {
         Self::new(Wavelet1D::cdf97())
     }
 
     /// Create 2D CDF 5/3 wavelet
+    #[must_use]
     pub fn cdf53() -> Self {
         Self::new(Wavelet1D::cdf53())
     }
@@ -292,16 +298,19 @@ pub struct Wavelet3D {
 
 impl Wavelet3D {
     /// Create 3D wavelet from 1D wavelet
+    #[must_use]
     pub fn new(wavelet_1d: Wavelet1D) -> Self {
         Self { wavelet_1d }
     }
 
     /// Create 3D CDF 9/7 wavelet
+    #[must_use]
     pub fn cdf97() -> Self {
         Self::new(Wavelet1D::cdf97())
     }
 
     /// Create 3D CDF 5/3 wavelet (lossless)
+    #[must_use]
     pub fn cdf53() -> Self {
         Self::new(Wavelet1D::cdf53())
     }
@@ -520,6 +529,92 @@ mod tests {
         wavelet.inverse(&mut volume, 4, 4, 4);
         for (i, (&orig, &rec)) in original.iter().zip(volume.iter()).enumerate() {
             assert!((orig - rec).abs() <= 3, "Roundtrip failed at {}: {} vs {}", i, orig, rec);
+        }
+    }
+
+    #[test]
+    fn test_haar_single_element() {
+        // Signal of length 1: forward/inverse should be identity
+        let wavelet = Wavelet1D::haar();
+        let mut signal = [42i32];
+        wavelet.forward(&mut signal);
+        assert_eq!(signal, [42]);
+        wavelet.inverse(&mut signal);
+        assert_eq!(signal, [42]);
+    }
+
+    #[test]
+    fn test_haar_two_elements() {
+        let wavelet = Wavelet1D::haar();
+        let original = [10i32, 20];
+        let mut signal = original;
+        wavelet.forward(&mut signal);
+        // After forward, the signal should be transformed (not identical to input)
+        wavelet.inverse(&mut signal);
+        for (i, (&o, &r)) in original.iter().zip(signal.iter()).enumerate() {
+            assert!((o - r).abs() <= 1, "Mismatch at {}: {} vs {}", i, o, r);
+        }
+    }
+
+    #[test]
+    fn test_constant_signal_haar() {
+        // A constant signal should be preserved in the low-pass and zero in high-pass
+        let wavelet = Wavelet1D::haar();
+        let original = [50i32; 8];
+        let mut signal = original;
+        wavelet.forward(&mut signal);
+
+        // High-pass coefficients (second half) should be zero or near-zero
+        for &hp in &signal[4..] {
+            assert!(hp.abs() <= 1, "High-pass should be near-zero for constant signal, got {}", hp);
+        }
+
+        wavelet.inverse(&mut signal);
+        for (i, (&o, &r)) in original.iter().zip(signal.iter()).enumerate() {
+            assert!((o - r).abs() <= 1, "Roundtrip mismatch at {}: {} vs {}", i, o, r);
+        }
+    }
+
+    #[test]
+    fn test_wavelet_2d_single_row_col() {
+        // 2x2 is the minimum meaningful 2D transform
+        let wavelet = Wavelet2D::cdf53();
+        let original = [10i32, 20, 30, 40];
+        let mut image = original;
+        wavelet.forward(&mut image, 2, 2);
+        wavelet.inverse(&mut image, 2, 2);
+        for (i, (&o, &r)) in original.iter().zip(image.iter()).enumerate() {
+            assert!((o - r).abs() <= 2, "2x2 roundtrip mismatch at {}: {} vs {}", i, o, r);
+        }
+    }
+
+    #[test]
+    fn test_wavelet_2d_cdf97_roundtrip() {
+        let wavelet = Wavelet2D::cdf97();
+        let original = [
+            10i32, 20, 30, 40,
+            15, 25, 35, 45,
+            12, 22, 32, 42,
+            18, 28, 38, 48,
+        ];
+        let mut image = original;
+        wavelet.forward(&mut image, 4, 4);
+        wavelet.inverse(&mut image, 4, 4);
+        for (i, (&o, &r)) in original.iter().zip(image.iter()).enumerate() {
+            assert!((o - r).abs() <= 3, "CDF97 2D mismatch at {}: {} vs {}", i, o, r);
+        }
+    }
+
+    #[test]
+    fn test_wavelet_3d_depth_2() {
+        // Minimum depth=2 for temporal transform
+        let wavelet = Wavelet3D::cdf53();
+        let original: Vec<i32> = (0..8).map(|i| 100 + i * 5).collect(); // 2x2x2
+        let mut volume = original.clone();
+        wavelet.forward(&mut volume, 2, 2, 2);
+        wavelet.inverse(&mut volume, 2, 2, 2);
+        for (i, (&o, &r)) in original.iter().zip(volume.iter()).enumerate() {
+            assert!((o - r).abs() <= 3, "3D depth=2 mismatch at {}: {} vs {}", i, o, r);
         }
     }
 }

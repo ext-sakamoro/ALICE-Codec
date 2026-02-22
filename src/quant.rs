@@ -57,6 +57,7 @@ impl Quantizer {
     /// Create quantizer with specified step size
     ///
     /// Dead-zone defaults to step size (standard dead-zone quantization).
+    #[must_use]
     #[inline]
     pub const fn new(step: i32) -> Self {
         Self {
@@ -66,6 +67,7 @@ impl Quantizer {
     }
 
     /// Create quantizer with custom dead-zone
+    #[must_use]
     #[inline]
     pub const fn with_dead_zone(step: i32, dead_zone: i32) -> Self {
         Self { step, dead_zone }
@@ -73,7 +75,8 @@ impl Quantizer {
 
     /// Quantize a single coefficient
     ///
-    /// Uses dead-zone quantization: values in [-dead_zone, dead_zone] map to 0.
+    /// Uses dead-zone quantization: values in `[-dead_zone, dead_zone]` map to 0.
+    #[must_use]
     #[inline]
     pub fn quantize(&self, value: i32) -> i32 {
         if value.abs() < self.dead_zone {
@@ -88,6 +91,7 @@ impl Quantizer {
     /// Dequantize a single coefficient
     ///
     /// Maps quantized value back to reconstruction level.
+    #[must_use]
     #[inline]
     pub fn dequantize(&self, qvalue: i32) -> i32 {
         if qvalue == 0 {
@@ -98,6 +102,10 @@ impl Quantizer {
     }
 
     /// Quantize buffer in-place (DPS style)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `output` is smaller than `input`.
     pub fn quantize_buffer(&self, input: &[i32], output: &mut [i32]) {
         assert!(output.len() >= input.len());
         for (i, &val) in input.iter().enumerate() {
@@ -106,6 +114,10 @@ impl Quantizer {
     }
 
     /// Dequantize buffer in-place (DPS style)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `output` is smaller than `input`.
     pub fn dequantize_buffer(&self, input: &[i32], output: &mut [i32]) {
         assert!(output.len() >= input.len());
         for (i, &val) in input.iter().enumerate() {
@@ -151,6 +163,11 @@ impl FastQuantizer {
     /// Create fast quantizer from step size
     ///
     /// Precomputes magic number for division.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `step` is not positive.
+    #[must_use]
     pub fn new(step: i32) -> Self {
         assert!(step > 0, "step must be positive");
 
@@ -179,6 +196,7 @@ impl FastQuantizer {
     }
 
     /// Create fast quantizer with custom dead-zone
+    #[must_use]
     pub fn with_dead_zone(step: i32, dead_zone: i32) -> Self {
         let mut q = Self::new(step);
         q.dead_zone = dead_zone;
@@ -186,7 +204,7 @@ impl FastQuantizer {
     }
 
     /// Fast division: x / step using precomputed magic number
-    #[inline(always)]
+    #[inline]
     fn fast_div(&self, x: u32) -> u32 {
         // (x * reciprocal) >> shift
         let product = x as u64 * self.reciprocal;
@@ -196,7 +214,8 @@ impl FastQuantizer {
     /// Quantize a single coefficient
     ///
     /// Uses magic number division for speed.
-    #[inline(always)]
+    #[must_use]
+    #[inline]
     pub fn quantize(&self, value: i32) -> i32 {
         let abs_val = value.abs();
 
@@ -217,7 +236,8 @@ impl FastQuantizer {
     }
 
     /// Dequantize a single coefficient
-    #[inline(always)]
+    #[must_use]
+    #[inline]
     pub fn dequantize(&self, qvalue: i32) -> i32 {
         if qvalue == 0 {
             0
@@ -227,6 +247,10 @@ impl FastQuantizer {
     }
 
     /// Quantize buffer (DPS style)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `output` is smaller than `input`.
     pub fn quantize_buffer(&self, input: &[i32], output: &mut [i32]) {
         assert!(output.len() >= input.len());
         for (i, &val) in input.iter().enumerate() {
@@ -235,6 +259,10 @@ impl FastQuantizer {
     }
 
     /// Dequantize buffer (DPS style)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `output` is smaller than `input`.
     pub fn dequantize_buffer(&self, input: &[i32], output: &mut [i32]) {
         assert!(output.len() >= input.len());
         for (i, &val) in input.iter().enumerate() {
@@ -264,12 +292,14 @@ impl FastQuantizer {
     }
 
     /// Get step size
+    #[must_use]
     #[inline]
     pub fn step(&self) -> i32 {
         self.step
     }
 
     /// Get dead zone
+    #[must_use]
     #[inline]
     pub fn dead_zone(&self) -> i32 {
         self.dead_zone
@@ -302,6 +332,7 @@ pub struct AnalyticalRDO {
 
 impl AnalyticalRDO {
     /// Create RDO optimizer with target bits-per-pixel
+    #[must_use]
     pub fn new(target_bpp: f64) -> Self {
         Self {
             target_bpp,
@@ -312,13 +343,14 @@ impl AnalyticalRDO {
     /// Create RDO optimizer with quality setting
     ///
     /// Quality 0 = maximum compression, 100 = lossless
+    #[must_use]
     pub fn with_quality(quality: u8) -> Self {
-        let quality = quality.min(100);
         // Map quality to approximate bits-per-pixel
         // Quality 100 → ~24 bpp (near lossless for 8-bit RGB)
         // Quality 50 → ~2 bpp
         // Quality 0 → ~0.1 bpp
         const RCP_100: f64 = 1.0 / 100.0;
+        let quality = quality.min(100);
         let target_bpp = 0.1 + (quality as f64 * RCP_100).powi(2) * 23.9;
 
         Self { target_bpp, quality }
@@ -349,7 +381,7 @@ impl AnalyticalRDO {
 
     /// Compute optimal quantization step for Laplacian distribution
     ///
-    /// Using the formula: λ_optimal = (6 × ln(2) × σ²) / R_target
+    /// Using the formula: `lambda_optimal` = (6 x ln(2) x sigma^2) / `R_target`
     fn compute_optimal_lambda(&self, variance: f64) -> f64 {
         let ln2 = core::f64::consts::LN_2;
         (6.0 * ln2 * variance) / self.target_bpp
@@ -364,6 +396,7 @@ impl AnalyticalRDO {
     }
 
     /// Compute optimal quantizer for a sub-band
+    #[must_use]
     pub fn compute_quantizer(&self, coeffs: &[i32], subband: SubBand3D) -> Quantizer {
         let variance = Self::estimate_variance(coeffs);
         let lambda = self.compute_optimal_lambda(variance);
@@ -380,6 +413,7 @@ impl AnalyticalRDO {
     }
 
     /// Compute quantizers for all 8 sub-bands of a 3D decomposition
+    #[must_use]
     pub fn compute_all_quantizers(&self, subbands: &[&[i32]; 8]) -> [Quantizer; 8] {
         let all_subbands = [
             SubBand3D::LLL,
@@ -401,12 +435,14 @@ impl AnalyticalRDO {
     }
 
     /// Get current quality setting
+    #[must_use]
     #[inline]
     pub fn quality(&self) -> u8 {
         self.quality
     }
 
     /// Get target bits-per-pixel
+    #[must_use]
     #[inline]
     pub fn target_bpp(&self) -> f64 {
         self.target_bpp
@@ -432,24 +468,30 @@ pub fn dequantize_subband(coeffs: &[i32], quantizer: &Quantizer, output: &mut [i
 /// Convert quantized coefficients to symbols for entropy coding
 ///
 /// Maps signed integers to unsigned symbols:
-/// 0 → 0, 1 → 1, -1 → 2, 2 → 3, -2 → 4, ...
+/// 0 -> 0, 1 -> 1, -1 -> 2, 2 -> 3, -2 -> 4, ...
+///
+/// # Panics
+///
+/// Panics if `symbols` is smaller than `coeffs`.
 pub fn to_symbols(coeffs: &[i32], symbols: &mut [u8]) {
     assert!(symbols.len() >= coeffs.len());
 
     for (i, &coeff) in coeffs.iter().enumerate() {
-        symbols[i] = if coeff == 0 {
-            0
-        } else if coeff > 0 {
-            (coeff * 2 - 1) as u8
-        } else {
-            (-coeff * 2) as u8
+        symbols[i] = match coeff.cmp(&0) {
+            core::cmp::Ordering::Equal => 0,
+            core::cmp::Ordering::Greater => (coeff * 2 - 1) as u8,
+            core::cmp::Ordering::Less => (-coeff * 2) as u8,
         };
     }
 }
 
 /// Convert symbols back to quantized coefficients
 ///
-/// Inverse of to_symbols.
+/// Inverse of `to_symbols`.
+///
+/// # Panics
+///
+/// Panics if `coeffs` is smaller than `symbols`.
 pub fn from_symbols(symbols: &[u8], coeffs: &mut [i32]) {
     assert!(coeffs.len() >= symbols.len());
 
@@ -465,6 +507,7 @@ pub fn from_symbols(symbols: &[u8], coeffs: &mut [i32]) {
 }
 
 /// Build histogram of symbols for entropy coding
+#[must_use]
 pub fn build_histogram(symbols: &[u8]) -> [u32; 256] {
     let mut histogram = [0u32; 256];
     for &sym in symbols {
@@ -536,6 +579,8 @@ mod simd {
     }
 
     /// Approximate integer division using multiply and shift
+    // SAFETY: Caller must ensure AVX2 is available. All __m256i values are valid
+    // since they come from other AVX2 intrinsics.
     #[inline]
     #[target_feature(enable = "avx2")]
     unsafe fn _mm256_div_epi32_approx(a: __m256i, b: __m256i) -> __m256i {
@@ -803,5 +848,183 @@ mod tests {
                 value
             );
         }
+    }
+
+    #[test]
+    fn test_quantizer_zero_value() {
+        let q = Quantizer::new(16);
+        assert_eq!(q.quantize(0), 0);
+        assert_eq!(q.dequantize(0), 0);
+    }
+
+    #[test]
+    fn test_quantizer_sign_symmetry() {
+        let q = Quantizer::new(10);
+        // Positive and negative of the same magnitude should have symmetric results
+        for v in [20, 50, 100, 200] {
+            let qp = q.quantize(v);
+            let qn = q.quantize(-v);
+            assert_eq!(qp, -qn, "Sign symmetry broken for value {}: +={}, -={}", v, qp, qn);
+        }
+    }
+
+    #[test]
+    fn test_quantizer_default() {
+        let q = Quantizer::default();
+        assert_eq!(q.step, 16);
+        assert_eq!(q.dead_zone, 16);
+    }
+
+    #[test]
+    fn test_fast_quantizer_default() {
+        let fq = FastQuantizer::default();
+        assert_eq!(fq.step(), 16);
+        assert_eq!(fq.dead_zone(), 16);
+    }
+
+    #[test]
+    fn test_fast_quantizer_sign_symmetry() {
+        let fq = FastQuantizer::new(10);
+        for v in [20, 50, 100, 500] {
+            let qp = fq.quantize(v);
+            let qn = fq.quantize(-v);
+            assert_eq!(qp, -qn, "FastQuantizer sign symmetry broken for {}: +={}, -={}", v, qp, qn);
+        }
+    }
+
+    #[test]
+    fn test_symbol_mapping_zero() {
+        let coeffs = [0i32];
+        let mut symbols = [0u8; 1];
+        let mut recovered = [0i32; 1];
+
+        to_symbols(&coeffs, &mut symbols);
+        assert_eq!(symbols[0], 0);
+
+        from_symbols(&symbols, &mut recovered);
+        assert_eq!(recovered[0], 0);
+    }
+
+    #[test]
+    fn test_histogram_empty() {
+        let symbols: [u8; 0] = [];
+        let hist = build_histogram(&symbols);
+        assert!(hist.iter().all(|&c| c == 0));
+    }
+
+    #[test]
+    fn test_histogram_single_symbol() {
+        let symbols = [42u8; 100];
+        let hist = build_histogram(&symbols);
+        assert_eq!(hist[42], 100);
+        // All others should be 0
+        for (i, &c) in hist.iter().enumerate() {
+            if i != 42 {
+                assert_eq!(c, 0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_rdo_quality_zero() {
+        let rdo = AnalyticalRDO::with_quality(0);
+        assert_eq!(rdo.quality(), 0);
+        assert!(rdo.target_bpp() > 0.0);
+    }
+
+    #[test]
+    fn test_rdo_quality_100() {
+        let rdo = AnalyticalRDO::with_quality(100);
+        assert_eq!(rdo.quality(), 100);
+        // Quality 100 should give highest bpp
+        assert!(rdo.target_bpp() > 20.0, "Quality 100 bpp {} too low", rdo.target_bpp());
+    }
+
+    #[test]
+    fn test_rdo_quality_clamped_above_100() {
+        // Quality above 100 should be clamped to 100
+        let rdo_100 = AnalyticalRDO::with_quality(100);
+        let rdo_200 = AnalyticalRDO::with_quality(200);
+        assert!((rdo_100.target_bpp() - rdo_200.target_bpp()).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_rdo_compute_all_quantizers() {
+        let rdo = AnalyticalRDO::with_quality(50);
+        let data: Vec<i32> = (-50..=50).collect();
+        let subbands: [&[i32]; 8] = [&data, &data, &data, &data, &data, &data, &data, &data];
+        let quantizers = rdo.compute_all_quantizers(&subbands);
+
+        // All steps should be positive
+        for (i, q) in quantizers.iter().enumerate() {
+            assert!(q.step > 0, "Quantizer {} has non-positive step: {}", i, q.step);
+        }
+
+        // LLL (index 0) should have smallest step, HHH (index 7) largest
+        assert!(
+            quantizers[7].step >= quantizers[0].step,
+            "HHH step {} should >= LLL step {}",
+            quantizers[7].step, quantizers[0].step
+        );
+    }
+
+    #[test]
+    fn test_quantize_subband_fn() {
+        let q = Quantizer::new(8);
+        let input = [0, 4, -4, 16, -16, 100, -100];
+        let mut output = [0i32; 7];
+        quantize_subband(&input, &q, &mut output);
+
+        // Values in dead-zone (|v| < 8) should be 0
+        assert_eq!(output[0], 0);
+        assert_eq!(output[1], 0);
+        assert_eq!(output[2], 0);
+
+        // Values outside dead-zone should be non-zero
+        assert_ne!(output[3], 0);
+        assert_ne!(output[4], 0);
+    }
+
+    #[test]
+    fn test_dequantize_subband_fn() {
+        let q = Quantizer::new(8);
+        let input = [0, 1, -1, 5, -5];
+        let mut output = [0i32; 5];
+        dequantize_subband(&input, &q, &mut output);
+        assert_eq!(output[0], 0);
+        assert_eq!(output[1], 8);
+        assert_eq!(output[2], -8);
+        assert_eq!(output[3], 40);
+        assert_eq!(output[4], -40);
+    }
+
+    #[test]
+    fn test_fast_quantizer_simd_fallback() {
+        // quantize_buffer_simd should produce same results as quantize_buffer
+        // on non-SIMD path (default features)
+        let fq = FastQuantizer::new(16);
+        let input: Vec<i32> = (-100..=100).collect();
+        let mut out_scalar = vec![0i32; input.len()];
+        let mut out_simd = vec![0i32; input.len()];
+
+        fq.quantize_buffer(&input, &mut out_scalar);
+        fq.quantize_buffer_simd(&input, &mut out_simd);
+
+        assert_eq!(out_scalar, out_simd);
+    }
+
+    #[test]
+    fn test_quantizer_with_custom_dead_zone() {
+        // Larger dead zone: more values map to 0
+        let q_small = Quantizer::with_dead_zone(8, 8);
+        let q_large = Quantizer::with_dead_zone(8, 24);
+
+        // Value 20: within large dead zone (24) but outside small dead zone (8)
+        assert_ne!(q_small.quantize(20), 0);
+        assert_eq!(q_large.quantize(20), 0);
+
+        // Also check that 50 is outside both dead zones
+        assert_ne!(q_small.quantize(50), 0);
+        assert_ne!(q_large.quantize(50), 0);
     }
 }
