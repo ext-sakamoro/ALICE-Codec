@@ -3,7 +3,7 @@
 //! Ternary neural inference for motion estimation and adaptive quantization.
 //! Uses 1.58-bit weights for ultra-fast sub-band classification and RDO hints.
 
-use alice_ml::{TernaryWeight, ternary_matvec};
+use alice_ml::{ternary_matvec, TernaryWeight};
 
 /// ML-accelerated sub-band classifier for adaptive quantization.
 ///
@@ -42,7 +42,9 @@ impl SubBandClassifier {
         debug_assert_eq!(features.len(), self.input_dim);
         let mut logits = vec![0.0f32; self.num_classes];
         ternary_matvec(features, &self.weights, &mut logits);
-        let (idx, &val) = logits.iter().enumerate()
+        let (idx, &val) = logits
+            .iter()
+            .enumerate()
             .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap();
         (idx, val)
@@ -56,9 +58,13 @@ impl SubBandClassifier {
     }
 
     /// Input dimension.
-    pub fn input_dim(&self) -> usize { self.input_dim }
+    pub fn input_dim(&self) -> usize {
+        self.input_dim
+    }
     /// Number of classes.
-    pub fn num_classes(&self) -> usize { self.num_classes }
+    pub fn num_classes(&self) -> usize {
+        self.num_classes
+    }
 }
 
 /// ML-accelerated motion vector predictor.

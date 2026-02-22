@@ -49,14 +49,29 @@ impl FrameCache {
 
     /// Look up a cached decoded frame.
     pub fn get(&self, chunk: u32, frame: u16, quality: u8) -> Option<CachedFrame> {
-        let key = FrameKey { chunk, frame, quality };
+        let key = FrameKey {
+            chunk,
+            frame,
+            quality,
+        };
         self.cache.get(&key)
     }
 
     /// Store a decoded frame.
     pub fn put(&self, chunk: u32, frame: u16, quality: u8, data: Vec<u8>, width: u32, height: u32) {
-        let key = FrameKey { chunk, frame, quality };
-        self.cache.put(key, CachedFrame { data, width, height });
+        let key = FrameKey {
+            chunk,
+            frame,
+            quality,
+        };
+        self.cache.put(
+            key,
+            CachedFrame {
+                data,
+                width,
+                height,
+            },
+        );
     }
 
     /// Cache hit rate.

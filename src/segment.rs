@@ -20,10 +20,10 @@
 //! 1. **Motion-Based**: Branchless frame diff + separable morphology
 //! 2. **Chroma-Key**: YCoCg-R Cg threshold (green screen)
 
-#[cfg(feature = "std")]
-use std::vec::Vec;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
+#[cfg(feature = "std")]
+use std::vec::Vec;
 
 /// Segmentation configuration
 #[derive(Debug, Clone)]
@@ -68,7 +68,9 @@ impl SegmentResult {
     #[must_use]
     pub fn coverage(&self) -> f32 {
         let total = self.width * self.height;
-        if total == 0 { return 0.0; }
+        if total == 0 {
+            return 0.0;
+        }
         let inv_total = 1.0 / total as f32;
         self.foreground_count as f32 * inv_total
     }
@@ -205,7 +207,8 @@ pub fn segment_by_chroma(
     let total = (width * height) as usize;
 
     // Branchless green screen detection
-    let mut mask: Vec<u8> = cg.iter()
+    let mut mask: Vec<u8> = cg
+        .iter()
         .take(total)
         .map(|&cg_val| (cg_val <= green_threshold) as u8)
         .collect();
@@ -281,15 +284,23 @@ fn dilate_mask_separable(mask: &mut [u8], w: usize, h: usize, r: usize) {
         // Forward scan: distance from last 1 (left→right)
         let mut dist = r + 1; // "no 1 found yet"
         for x in 0..w {
-            if mask[row_off + x] != 0 { dist = 0; }
-            if dist <= r { temp[row_off + x] = 1; }
+            if mask[row_off + x] != 0 {
+                dist = 0;
+            }
+            if dist <= r {
+                temp[row_off + x] = 1;
+            }
             dist = dist.wrapping_add(1);
         }
         // Backward scan: distance from last 1 (right→left)
         dist = r + 1;
         for x in (0..w).rev() {
-            if mask[row_off + x] != 0 { dist = 0; }
-            if dist <= r { temp[row_off + x] = 1; }
+            if mask[row_off + x] != 0 {
+                dist = 0;
+            }
+            if dist <= r {
+                temp[row_off + x] = 1;
+            }
             dist = dist.wrapping_add(1);
         }
     }
@@ -303,16 +314,24 @@ fn dilate_mask_separable(mask: &mut [u8], w: usize, h: usize, r: usize) {
         let mut dist = r + 1;
         for y in 0..h {
             let idx = y * w + x;
-            if temp[idx] != 0 { dist = 0; }
-            if dist <= r { mask[idx] = 1; }
+            if temp[idx] != 0 {
+                dist = 0;
+            }
+            if dist <= r {
+                mask[idx] = 1;
+            }
             dist = dist.wrapping_add(1);
         }
         // Backward scan (bottom→top)
         dist = r + 1;
         for y in (0..h).rev() {
             let idx = y * w + x;
-            if temp[idx] != 0 { dist = 0; }
-            if dist <= r { mask[idx] = 1; }
+            if temp[idx] != 0 {
+                dist = 0;
+            }
+            if dist <= r {
+                mask[idx] = 1;
+            }
             dist = dist.wrapping_add(1);
         }
     }
@@ -324,11 +343,15 @@ fn dilate_mask_separable(mask: &mut [u8], w: usize, h: usize, r: usize) {
 fn erode_mask_separable(mask: &mut [u8], w: usize, h: usize, r: usize) {
     let n = w * h;
     // Complement: 0 <-> 1
-    for v in &mut mask[..n] { *v ^= 1; }
+    for v in &mut mask[..n] {
+        *v ^= 1;
+    }
     // Dilate the complemented mask
     dilate_mask_separable(mask, w, h, r);
     // Complement back
-    for v in &mut mask[..n] { *v ^= 1; }
+    for v in &mut mask[..n] {
+        *v ^= 1;
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -350,18 +373,26 @@ fn compute_bbox_fast(mask: &[u8], w: usize, h: usize) -> ([u32; 4], u32) {
         let row = &mask[y * w..(y + 1) * w];
         // Row sum auto-vectorizes to VPSADBW + horizontal add on AVX2
         let row_count: u32 = row.iter().map(|&v| v as u32).sum();
-        if row_count == 0 { continue; }
+        if row_count == 0 {
+            continue;
+        }
 
         fg_count += row_count;
-        if y < min_y { min_y = y; }
+        if y < min_y {
+            min_y = y;
+        }
         max_y = y; // always update (rows scan top→bottom)
 
         // Find first and last foreground pixel in this row
         if let Some(first) = row.iter().position(|&v| v == 1) {
-            if first < min_x { min_x = first; }
+            if first < min_x {
+                min_x = first;
+            }
         }
         if let Some(last) = row.iter().rposition(|&v| v == 1) {
-            if last > max_x { max_x = last; }
+            if last > max_x {
+                max_x = last;
+            }
         }
     }
 
@@ -435,7 +466,9 @@ mod tests {
         let width = 10u32;
         let height = 4u32;
         let mut mask = vec![0u8; 40];
-        for i in 10..30 { mask[i] = 1; }
+        for i in 10..30 {
+            mask[i] = 1;
+        }
 
         let result = SegmentResult {
             mask,
@@ -534,9 +567,9 @@ mod tests {
         dilate_mask_separable(&mut mask, 5, 5, 1);
 
         // radius=1 box: should set (1,1)-(3,3)
-        assert_eq!(mask[6], 1);  // (1,1)
-        assert_eq!(mask[7], 1);  // (2,1)
-        assert_eq!(mask[8], 1);  // (3,1)
+        assert_eq!(mask[6], 1); // (1,1)
+        assert_eq!(mask[7], 1); // (2,1)
+        assert_eq!(mask[8], 1); // (3,1)
         assert_eq!(mask[11], 1); // (1,2)
         assert_eq!(mask[12], 1); // (2,2)
         assert_eq!(mask[13], 1); // (3,2)
@@ -549,8 +582,14 @@ mod tests {
     fn test_separable_erode_basic() {
         // 7x7 mask: all 1s except border
         let mut mask = vec![1u8; 49];
-        for x in 0..7 { mask[x] = 0; mask[42 + x] = 0; } // top/bottom
-        for y in 0..7 { mask[y * 7] = 0; mask[y * 7 + 6] = 0; } // left/right
+        for x in 0..7 {
+            mask[x] = 0;
+            mask[42 + x] = 0;
+        } // top/bottom
+        for y in 0..7 {
+            mask[y * 7] = 0;
+            mask[y * 7 + 6] = 0;
+        } // left/right
 
         let before_count: u32 = mask.iter().map(|&v| v as u32).sum();
         erode_mask_separable(&mut mask, 7, 7, 1);
@@ -565,7 +604,7 @@ mod tests {
     #[test]
     fn test_bbox_fast() {
         let mut mask = vec![0u8; 100]; // 10×10
-        // Person at (3,2) to (7,6)
+                                       // Person at (3,2) to (7,6)
         for y in 2..7 {
             for x in 3..8 {
                 mask[y * 10 + x] = 1;
@@ -681,7 +720,7 @@ mod tests {
         let co = vec![0i16; total];
         // Cg > threshold = green screen (background), Cg <= threshold = foreground
         let mut cg = vec![100i16; total]; // all above threshold → not foreground
-        // Place foreground in center rows
+                                          // Place foreground in center rows
         for row in 1..4 {
             for col in 2..8 {
                 let idx = row * width as usize + col;
@@ -690,7 +729,10 @@ mod tests {
         }
 
         let result = segment_by_chroma(&y, &co, &cg, width, height, 50);
-        assert!(result.foreground_count > 0, "Should detect foreground pixels");
+        assert!(
+            result.foreground_count > 0,
+            "Should detect foreground pixels"
+        );
     }
 
     #[test]

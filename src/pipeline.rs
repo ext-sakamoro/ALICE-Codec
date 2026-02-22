@@ -19,7 +19,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::color::{rgb_bytes_to_ycocg_r, ycocg_r_to_rgb_bytes};
-use crate::quant::{to_symbols, from_symbols, build_histogram, Quantizer};
+use crate::quant::{build_histogram, from_symbols, to_symbols, Quantizer};
 use crate::rans::{FrequencyTable, RansDecoder, RansEncoder};
 use crate::wavelet::{Wavelet1D, Wavelet3D};
 
@@ -29,8 +29,12 @@ use crate::wavelet::{Wavelet1D, Wavelet3D};
 /// the boundary values (last column, last row, last frame).
 fn pad_channel_to_i32(
     ch_data: &[i16],
-    w: usize, h: usize, f: usize,
-    padded_w: usize, padded_h: usize, padded_frames: usize,
+    w: usize,
+    h: usize,
+    f: usize,
+    padded_w: usize,
+    padded_h: usize,
+    padded_frames: usize,
 ) -> Vec<i32> {
     let padded_pixels = padded_w * padded_h * padded_frames;
     let mut buf = vec![0i32; padded_pixels];
@@ -56,8 +60,7 @@ fn pad_channel_to_i32(
     for t in f..padded_frames {
         let src_frame = f - 1;
         for idx in 0..(padded_w * padded_h) {
-            buf[t * padded_w * padded_h + idx] =
-                buf[src_frame * padded_w * padded_h + idx];
+            buf[t * padded_w * padded_h + idx] = buf[src_frame * padded_w * padded_h + idx];
         }
     }
     buf
@@ -112,7 +115,8 @@ impl EncodedChunk {
 /// Compresses interleaved RGB byte frames through the full pipeline:
 /// color conversion, 3-D wavelet, quantization, and rANS entropy coding.
 pub struct FrameEncoder {
-    quality: u8,
+    /// Quality setting (0-100). Accessible within the crate for Python bindings.
+    pub(crate) quality: u8,
 }
 
 impl FrameEncoder {
@@ -140,13 +144,7 @@ impl FrameEncoder {
     /// Panics if `rgb_frames.len() != width * height * frames * 3`, or if
     /// `width` or `height` is zero.
     #[must_use]
-    pub fn encode(
-        &self,
-        rgb_frames: &[u8],
-        width: u32,
-        height: u32,
-        frames: u32,
-    ) -> EncodedChunk {
+    pub fn encode(&self, rgb_frames: &[u8], width: u32, height: u32, frames: u32) -> EncodedChunk {
         let w = width as usize;
         let h = height as usize;
         let f = frames as usize;
@@ -205,9 +203,7 @@ impl FrameEncoder {
         let quant_step = (64 - (clamped_q * 63) / 100).max(1);
 
         for (ch_idx, &ch_data) in channels_i16.iter().enumerate() {
-            let mut buf = pad_channel_to_i32(
-                ch_data, w, h, f, padded_w, padded_h, padded_frames,
-            );
+            let mut buf = pad_channel_to_i32(ch_data, w, h, f, padded_w, padded_h, padded_frames);
 
             // 3-D forward wavelet transform (CDF 5/3)
             let w3d = Wavelet3D::new(Wavelet1D::cdf53());
@@ -309,8 +305,7 @@ impl FrameDecoder {
                 "num_symbols mismatch with padded dimensions"
             );
 
-            let compressed =
-                &chunk.compressed_data[data_offset..data_offset + compressed_len];
+            let compressed = &chunk.compressed_data[data_offset..data_offset + compressed_len];
             data_offset += compressed_len;
 
             // Rebuild frequency table from stored histogram
@@ -348,7 +343,12 @@ impl FrameDecoder {
 
         // --- YCoCg-R -> RGB ---
         let mut rgb_out = vec![0u8; n_pixels * 3];
-        ycocg_r_to_rgb_bytes(&channel_i16[0], &channel_i16[1], &channel_i16[2], &mut rgb_out);
+        ycocg_r_to_rgb_bytes(
+            &channel_i16[0],
+            &channel_i16[1],
+            &channel_i16[2],
+            &mut rgb_out,
+        );
 
         rgb_out
     }
@@ -412,11 +412,7 @@ mod tests {
         // At quality 90 we expect reasonable PSNR (at least 20 dB for this
         // small image where quantization artefacts are amplified).
         let p = psnr(&rgb, &decoded);
-        assert!(
-            p > 15.0,
-            "PSNR too low: {:.2} dB (expected > 15 dB)",
-            p
-        );
+        assert!(p > 15.0, "PSNR too low: {:.2} dB (expected > 15 dB)", p);
     }
 
     #[test]
@@ -446,11 +442,7 @@ mod tests {
         // only error comes from the quantizer dead-zone.  PSNR should be very
         // high.
         let p = psnr(&rgb, &decoded);
-        assert!(
-            p > 25.0,
-            "PSNR too low for solid color: {:.2} dB",
-            p
-        );
+        assert!(p > 25.0, "PSNR too low for solid color: {:.2} dB", p);
     }
 
     #[test]
@@ -519,11 +511,7 @@ mod tests {
         assert_eq!(decoded.len(), rgb.len());
 
         let p = psnr(&rgb, &decoded);
-        assert!(
-            p > 10.0,
-            "Single-frame PSNR too low: {:.2} dB",
-            p
-        );
+        assert!(p > 10.0, "Single-frame PSNR too low: {:.2} dB", p);
     }
 
     #[test]

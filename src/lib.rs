@@ -40,18 +40,18 @@
     clippy::cast_sign_loss,
     clippy::cast_lossless,
     clippy::cast_possible_wrap,
-    clippy::unused_self,
+    clippy::unused_self
 )]
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
-pub mod wavelet;
 pub mod color;
-pub mod rans;
-pub mod quant;
-pub mod segment;
 pub mod pipeline;
+pub mod quant;
+pub mod rans;
+pub mod segment;
+pub mod wavelet;
 
 #[cfg(feature = "python")]
 mod python;
@@ -69,12 +69,12 @@ pub mod crypto_bridge;
 pub mod cache_bridge;
 
 // Re-exports
-pub use wavelet::{Wavelet1D, Wavelet2D, Wavelet3D};
 pub use color::{rgb_to_ycocg_r, ycocg_r_to_rgb};
-pub use rans::{RansEncoder, RansDecoder, RansState};
-pub use quant::{Quantizer, AnalyticalRDO};
-pub use segment::{SegmentConfig, SegmentResult, segment_by_motion, segment_by_chroma};
-pub use pipeline::{EncodedChunk, FrameEncoder, FrameDecoder};
+pub use pipeline::{EncodedChunk, FrameDecoder, FrameEncoder};
+pub use quant::{AnalyticalRDO, Quantizer};
+pub use rans::{RansDecoder, RansEncoder, RansState};
+pub use segment::{segment_by_chroma, segment_by_motion, SegmentConfig, SegmentResult};
+pub use wavelet::{Wavelet1D, Wavelet2D, Wavelet3D};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -109,7 +109,10 @@ impl SubBand3D {
     #[must_use]
     #[inline]
     pub const fn is_temporal_high(&self) -> bool {
-        matches!(self, SubBand3D::LLH | SubBand3D::LHH | SubBand3D::HLH | SubBand3D::HHH)
+        matches!(
+            self,
+            SubBand3D::LLH | SubBand3D::LHH | SubBand3D::HLH | SubBand3D::HHH
+        )
     }
 
     /// Returns true if this is the lowest frequency sub-band
@@ -124,10 +127,10 @@ impl SubBand3D {
     #[inline]
     pub const fn quant_strength(&self) -> u8 {
         match self {
-            SubBand3D::LLL => 1,   // Preserve DC
+            SubBand3D::LLL => 1, // Preserve DC
             SubBand3D::LLH | SubBand3D::LHL | SubBand3D::HLL => 2,
             SubBand3D::LHH | SubBand3D::HLH | SubBand3D::HHL => 4,
-            SubBand3D::HHH => 8,   // Most aggressive
+            SubBand3D::HHH => 8, // Most aggressive
         }
     }
 }
@@ -156,22 +159,42 @@ mod tests {
     #[test]
     fn test_subband_all_variants_temporal_high() {
         // Exhaustive: exactly 4 sub-bands are temporal-high
-        let temporal_high = [SubBand3D::LLH, SubBand3D::LHH, SubBand3D::HLH, SubBand3D::HHH];
-        let temporal_low  = [SubBand3D::LLL, SubBand3D::LHL, SubBand3D::HLL, SubBand3D::HHL];
+        let temporal_high = [
+            SubBand3D::LLH,
+            SubBand3D::LHH,
+            SubBand3D::HLH,
+            SubBand3D::HHH,
+        ];
+        let temporal_low = [
+            SubBand3D::LLL,
+            SubBand3D::LHL,
+            SubBand3D::HLL,
+            SubBand3D::HHL,
+        ];
 
         for sb in temporal_high {
             assert!(sb.is_temporal_high(), "{:?} should be temporal-high", sb);
         }
         for sb in temporal_low {
-            assert!(!sb.is_temporal_high(), "{:?} should NOT be temporal-high", sb);
+            assert!(
+                !sb.is_temporal_high(),
+                "{:?} should NOT be temporal-high",
+                sb
+            );
         }
     }
 
     #[test]
     fn test_subband_only_lll_is_dc() {
         let all = [
-            SubBand3D::LLL, SubBand3D::LLH, SubBand3D::LHL, SubBand3D::LHH,
-            SubBand3D::HLL, SubBand3D::HLH, SubBand3D::HHL, SubBand3D::HHH,
+            SubBand3D::LLL,
+            SubBand3D::LLH,
+            SubBand3D::LHL,
+            SubBand3D::LHH,
+            SubBand3D::HLL,
+            SubBand3D::HLH,
+            SubBand3D::HHL,
+            SubBand3D::HHH,
         ];
         for sb in all {
             if matches!(sb, SubBand3D::LLL) {

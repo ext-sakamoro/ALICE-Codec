@@ -79,9 +79,18 @@ impl CodecMetricsSink {
 
     /// Record a batch of metric samples (more efficient than individual puts).
     pub fn record_batch(&self, metrics: &[CodecMetrics]) -> io::Result<()> {
-        let bitrate: Vec<(i64, f32)> = metrics.iter().map(|m| (m.timestamp_ms, m.bitrate_bps)).collect();
-        let psnr: Vec<(i64, f32)> = metrics.iter().map(|m| (m.timestamp_ms, m.psnr_db)).collect();
-        let encode_time: Vec<(i64, f32)> = metrics.iter().map(|m| (m.timestamp_ms, m.encode_time_us)).collect();
+        let bitrate: Vec<(i64, f32)> = metrics
+            .iter()
+            .map(|m| (m.timestamp_ms, m.bitrate_bps))
+            .collect();
+        let psnr: Vec<(i64, f32)> = metrics
+            .iter()
+            .map(|m| (m.timestamp_ms, m.psnr_db))
+            .collect();
+        let encode_time: Vec<(i64, f32)> = metrics
+            .iter()
+            .map(|m| (m.timestamp_ms, m.encode_time_us))
+            .collect();
 
         self.db_bitrate.put_batch(&bitrate)?;
         self.db_psnr.put_batch(&psnr)?;

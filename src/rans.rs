@@ -302,12 +302,8 @@ impl<'a> RansDecoder<'a> {
     /// Initialize state from first 4 bytes (big-endian since we reversed)
     fn init_state(&mut self) {
         if self.input.len() >= 4 {
-            self.state = u32::from_be_bytes([
-                self.input[0],
-                self.input[1],
-                self.input[2],
-                self.input[3],
-            ]);
+            self.state =
+                u32::from_be_bytes([self.input[0], self.input[1], self.input[2], self.input[3]]);
             self.pos = 4;
         }
     }
@@ -391,11 +387,7 @@ impl InterleavedRansEncoder {
     /// Finish encoding and interleave outputs
     #[must_use]
     pub fn finish(self) -> Vec<u8> {
-        let outputs: Vec<Vec<u8>> = self
-            .encoders
-            .into_iter()
-            .map(RansEncoder::finish)
-            .collect();
+        let outputs: Vec<Vec<u8>> = self.encoders.into_iter().map(RansEncoder::finish).collect();
 
         // Store stream lengths + symbol counts + interleaved data
         let mut result = Vec::new();
@@ -561,7 +553,10 @@ impl<'a> SimdRansDecoder<'a> {
     ///
     /// Panics if `n` is not a multiple of 4.
     pub fn decode_n(&mut self, n: usize, table: &FrequencyTable) -> Vec<u8> {
-        assert!(n.is_multiple_of(4), "n must be multiple of 4 for SIMD decoder");
+        assert!(
+            n.is_multiple_of(4),
+            "n must be multiple of 4 for SIMD decoder"
+        );
         let mut output = Vec::with_capacity(n);
 
         for _ in 0..(n / 4) {
@@ -644,7 +639,10 @@ mod simd {
         /// Requires AVX2 support.
         #[target_feature(enable = "avx2")]
         pub unsafe fn decode_n_avx2(&mut self, n: usize, table: &FrequencyTable) -> Vec<u8> {
-            assert!(n.is_multiple_of(4), "n must be multiple of 4 for SIMD decoder");
+            assert!(
+                n.is_multiple_of(4),
+                "n must be multiple of 4 for SIMD decoder"
+            );
             let mut output = Vec::with_capacity(n);
 
             for _ in 0..(n / 4) {
@@ -850,9 +848,12 @@ mod tests {
         // Dominant symbol should have the highest frequency
         let dominant = table.get_symbol(100);
         let non_dominant = table.get_symbol(0);
-        assert!(dominant.freq >= non_dominant.freq,
+        assert!(
+            dominant.freq >= non_dominant.freq,
             "Dominant symbol freq {} should be >= non-dominant freq {}",
-            dominant.freq, non_dominant.freq);
+            dominant.freq,
+            non_dominant.freq
+        );
     }
 
     #[test]

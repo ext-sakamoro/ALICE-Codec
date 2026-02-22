@@ -57,10 +57,22 @@ impl Wavelet1D {
         // δ = 0.443506852  → 1817
         Self {
             steps: vec![
-                LiftingStep { coeff: -6497, predict: true },   // α: predict
-                LiftingStep { coeff: -217, predict: false },   // β: update
-                LiftingStep { coeff: 3616, predict: true },    // γ: predict
-                LiftingStep { coeff: 1817, predict: false },   // δ: update
+                LiftingStep {
+                    coeff: -6497,
+                    predict: true,
+                }, // α: predict
+                LiftingStep {
+                    coeff: -217,
+                    predict: false,
+                }, // β: update
+                LiftingStep {
+                    coeff: 3616,
+                    predict: true,
+                }, // γ: predict
+                LiftingStep {
+                    coeff: 1817,
+                    predict: false,
+                }, // δ: update
             ],
         }
     }
@@ -70,8 +82,14 @@ impl Wavelet1D {
     pub fn haar() -> Self {
         Self {
             steps: vec![
-                LiftingStep { coeff: -4096, predict: true },   // d[n] = odd - even
-                LiftingStep { coeff: 2048, predict: false },   // s[n] = even + d/2
+                LiftingStep {
+                    coeff: -4096,
+                    predict: true,
+                }, // d[n] = odd - even
+                LiftingStep {
+                    coeff: 2048,
+                    predict: false,
+                }, // s[n] = even + d/2
             ],
         }
     }
@@ -82,8 +100,14 @@ impl Wavelet1D {
         // Integer 5/3 wavelet: perfect reconstruction guaranteed
         Self {
             steps: vec![
-                LiftingStep { coeff: -4096, predict: true },   // d = odd - (even_l + even_r)/2
-                LiftingStep { coeff: 1024, predict: false },   // s = even + (d_l + d_r + 2)/4
+                LiftingStep {
+                    coeff: -4096,
+                    predict: true,
+                }, // d = odd - (even_l + even_r)/2
+                LiftingStep {
+                    coeff: 1024,
+                    predict: false,
+                }, // s = even + (d_l + d_r + 2)/4
             ],
         }
     }
@@ -148,7 +172,7 @@ impl Wavelet1D {
             let even_right = if i * 2 + 2 < n {
                 signal[i * 2 + 2]
             } else {
-                signal[i * 2]  // Mirror boundary
+                signal[i * 2] // Mirror boundary
             };
 
             // Fixed-point multiply with rounding
@@ -168,7 +192,7 @@ impl Wavelet1D {
             let odd_left = if i > 0 {
                 signal[i * 2 - 1]
             } else {
-                signal[1]  // Mirror boundary
+                signal[1] // Mirror boundary
             };
             let odd_right = signal[i * 2 + 1];
 
@@ -187,7 +211,7 @@ impl Wavelet1D {
         let mut temp = vec![0i32; n];
 
         for i in 0..half {
-            temp[i] = signal[i * 2];           // Even → first half
+            temp[i] = signal[i * 2]; // Even → first half
             temp[half + i] = signal[i * 2 + 1]; // Odd → second half
         }
 
@@ -202,7 +226,7 @@ impl Wavelet1D {
         let mut temp = vec![0i32; n];
 
         for i in 0..half {
-            temp[i * 2] = signal[i];           // First half → even
+            temp[i * 2] = signal[i]; // First half → even
             temp[i * 2 + 1] = signal[half + i]; // Second half → odd
         }
 
@@ -243,7 +267,8 @@ impl Wavelet2D {
         // Transform rows
         for y in 0..height {
             let row_start = y * width;
-            self.wavelet_1d.forward(&mut image[row_start..row_start + width]);
+            self.wavelet_1d
+                .forward(&mut image[row_start..row_start + width]);
         }
 
         // Transform columns (need to extract/insert column data)
@@ -283,7 +308,8 @@ impl Wavelet2D {
         // Inverse transform rows
         for y in 0..height {
             let row_start = y * width;
-            self.wavelet_1d.inverse(&mut image[row_start..row_start + width]);
+            self.wavelet_1d
+                .inverse(&mut image[row_start..row_start + width]);
         }
     }
 }
@@ -336,7 +362,8 @@ impl Wavelet3D {
             // Rows
             for y in 0..height {
                 let row_start = y * width;
-                self.wavelet_1d.forward(&mut frame[row_start..row_start + width]);
+                self.wavelet_1d
+                    .forward(&mut frame[row_start..row_start + width]);
             }
 
             // Columns
@@ -412,7 +439,8 @@ impl Wavelet3D {
             // Rows
             for y in 0..height {
                 let row_start = y * width;
-                self.wavelet_1d.inverse(&mut frame[row_start..row_start + width]);
+                self.wavelet_1d
+                    .inverse(&mut frame[row_start..row_start + width]);
             }
         }
     }
@@ -433,7 +461,13 @@ mod tests {
 
         // Should be identical (Haar is perfectly reversible with integers)
         for (i, (&orig, &rec)) in original.iter().zip(signal.iter()).enumerate() {
-            assert!((orig - rec).abs() <= 1, "Mismatch at {}: {} vs {}", i, orig, rec);
+            assert!(
+                (orig - rec).abs() <= 1,
+                "Mismatch at {}: {} vs {}",
+                i,
+                orig,
+                rec
+            );
         }
     }
 
@@ -447,7 +481,13 @@ mod tests {
         wavelet.inverse(&mut signal);
 
         for (i, (&orig, &rec)) in original.iter().zip(signal.iter()).enumerate() {
-            assert!((orig - rec).abs() <= 1, "Mismatch at {}: {} vs {}", i, orig, rec);
+            assert!(
+                (orig - rec).abs() <= 1,
+                "Mismatch at {}: {} vs {}",
+                i,
+                orig,
+                rec
+            );
         }
     }
 
@@ -462,7 +502,13 @@ mod tests {
 
         // CDF 9/7 with integer approximation has small error
         for (i, (&orig, &rec)) in original.iter().zip(signal.iter()).enumerate() {
-            assert!((orig - rec).abs() <= 2, "Mismatch at {}: {} vs {}", i, orig, rec);
+            assert!(
+                (orig - rec).abs() <= 2,
+                "Mismatch at {}: {} vs {}",
+                i,
+                orig,
+                rec
+            );
         }
     }
 
@@ -470,10 +516,7 @@ mod tests {
     fn test_wavelet_2d_roundtrip() {
         let wavelet = Wavelet2D::cdf53();
         let original = [
-            10i32, 20, 30, 40,
-            15, 25, 35, 45,
-            12, 22, 32, 42,
-            18, 28, 38, 48,
+            10i32, 20, 30, 40, 15, 25, 35, 45, 12, 22, 32, 42, 18, 28, 38, 48,
         ];
         let mut image = original;
 
@@ -481,7 +524,13 @@ mod tests {
         wavelet.inverse(&mut image, 4, 4);
 
         for (i, (&orig, &rec)) in original.iter().zip(image.iter()).enumerate() {
-            assert!((orig - rec).abs() <= 2, "Mismatch at {}: {} vs {}", i, orig, rec);
+            assert!(
+                (orig - rec).abs() <= 2,
+                "Mismatch at {}: {} vs {}",
+                i,
+                orig,
+                rec
+            );
         }
     }
 
@@ -497,7 +546,13 @@ mod tests {
         wavelet.inverse(&mut volume, 4, 4, 4);
 
         for (i, (&orig, &rec)) in original.iter().zip(volume.iter()).enumerate() {
-            assert!((orig - rec).abs() <= 3, "Mismatch at {}: {} vs {}", i, orig, rec);
+            assert!(
+                (orig - rec).abs() <= 3,
+                "Mismatch at {}: {} vs {}",
+                i,
+                orig,
+                rec
+            );
         }
     }
 
@@ -522,13 +577,20 @@ mod tests {
         assert!(
             lll_energy > 0,
             "Energy compaction failed: LLL={}, Total={}",
-            lll_energy, total_energy
+            lll_energy,
+            total_energy
         );
 
         // More importantly: roundtrip should work
         wavelet.inverse(&mut volume, 4, 4, 4);
         for (i, (&orig, &rec)) in original.iter().zip(volume.iter()).enumerate() {
-            assert!((orig - rec).abs() <= 3, "Roundtrip failed at {}: {} vs {}", i, orig, rec);
+            assert!(
+                (orig - rec).abs() <= 3,
+                "Roundtrip failed at {}: {} vs {}",
+                i,
+                orig,
+                rec
+            );
         }
     }
 
@@ -566,12 +628,22 @@ mod tests {
 
         // High-pass coefficients (second half) should be zero or near-zero
         for &hp in &signal[4..] {
-            assert!(hp.abs() <= 1, "High-pass should be near-zero for constant signal, got {}", hp);
+            assert!(
+                hp.abs() <= 1,
+                "High-pass should be near-zero for constant signal, got {}",
+                hp
+            );
         }
 
         wavelet.inverse(&mut signal);
         for (i, (&o, &r)) in original.iter().zip(signal.iter()).enumerate() {
-            assert!((o - r).abs() <= 1, "Roundtrip mismatch at {}: {} vs {}", i, o, r);
+            assert!(
+                (o - r).abs() <= 1,
+                "Roundtrip mismatch at {}: {} vs {}",
+                i,
+                o,
+                r
+            );
         }
     }
 
@@ -584,7 +656,13 @@ mod tests {
         wavelet.forward(&mut image, 2, 2);
         wavelet.inverse(&mut image, 2, 2);
         for (i, (&o, &r)) in original.iter().zip(image.iter()).enumerate() {
-            assert!((o - r).abs() <= 2, "2x2 roundtrip mismatch at {}: {} vs {}", i, o, r);
+            assert!(
+                (o - r).abs() <= 2,
+                "2x2 roundtrip mismatch at {}: {} vs {}",
+                i,
+                o,
+                r
+            );
         }
     }
 
@@ -592,16 +670,19 @@ mod tests {
     fn test_wavelet_2d_cdf97_roundtrip() {
         let wavelet = Wavelet2D::cdf97();
         let original = [
-            10i32, 20, 30, 40,
-            15, 25, 35, 45,
-            12, 22, 32, 42,
-            18, 28, 38, 48,
+            10i32, 20, 30, 40, 15, 25, 35, 45, 12, 22, 32, 42, 18, 28, 38, 48,
         ];
         let mut image = original;
         wavelet.forward(&mut image, 4, 4);
         wavelet.inverse(&mut image, 4, 4);
         for (i, (&o, &r)) in original.iter().zip(image.iter()).enumerate() {
-            assert!((o - r).abs() <= 3, "CDF97 2D mismatch at {}: {} vs {}", i, o, r);
+            assert!(
+                (o - r).abs() <= 3,
+                "CDF97 2D mismatch at {}: {} vs {}",
+                i,
+                o,
+                r
+            );
         }
     }
 
@@ -614,7 +695,13 @@ mod tests {
         wavelet.forward(&mut volume, 2, 2, 2);
         wavelet.inverse(&mut volume, 2, 2, 2);
         for (i, (&o, &r)) in original.iter().zip(volume.iter()).enumerate() {
-            assert!((o - r).abs() <= 3, "3D depth=2 mismatch at {}: {} vs {}", i, o, r);
+            assert!(
+                (o - r).abs() <= 3,
+                "3D depth=2 mismatch at {}: {} vs {}",
+                i,
+                o,
+                r
+            );
         }
     }
 }

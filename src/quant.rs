@@ -232,7 +232,11 @@ impl FastQuantizer {
         let q_abs = self.fast_div(adjusted) as i32;
 
         // Restore sign
-        if value < 0 { -q_abs } else { q_abs }
+        if value < 0 {
+            -q_abs
+        } else {
+            q_abs
+        }
     }
 
     /// Dequantize a single coefficient
@@ -353,7 +357,10 @@ impl AnalyticalRDO {
         let quality = quality.min(100);
         let target_bpp = 0.1 + (quality as f64 * RCP_100).powi(2) * 23.9;
 
-        Self { target_bpp, quality }
+        Self {
+            target_bpp,
+            quality,
+        }
     }
 
     /// Estimate variance of coefficients
@@ -620,7 +627,11 @@ mod tests {
             // For values outside dead-zone, error should be bounded
             // For values in dead-zone, they map to 0
             if value.abs() < quantizer.dead_zone {
-                assert_eq!(dequant, 0, "Dead-zone value {} should dequantize to 0", value);
+                assert_eq!(
+                    dequant, 0,
+                    "Dead-zone value {} should dequantize to 0",
+                    value
+                );
             } else {
                 // Error can be up to step + dead_zone for boundary cases
                 let max_error = quantizer.step + quantizer.dead_zone;
@@ -800,7 +811,9 @@ mod tests {
             assert!(
                 (q - expected).abs() <= 1,
                 "Large value {}: got {}, expected ~{}",
-                value, q, expected
+                value,
+                q,
+                expected
             );
         }
     }
@@ -864,7 +877,11 @@ mod tests {
         for v in [20, 50, 100, 200] {
             let qp = q.quantize(v);
             let qn = q.quantize(-v);
-            assert_eq!(qp, -qn, "Sign symmetry broken for value {}: +={}, -={}", v, qp, qn);
+            assert_eq!(
+                qp, -qn,
+                "Sign symmetry broken for value {}: +={}, -={}",
+                v, qp, qn
+            );
         }
     }
 
@@ -888,7 +905,11 @@ mod tests {
         for v in [20, 50, 100, 500] {
             let qp = fq.quantize(v);
             let qn = fq.quantize(-v);
-            assert_eq!(qp, -qn, "FastQuantizer sign symmetry broken for {}: +={}, -={}", v, qp, qn);
+            assert_eq!(
+                qp, -qn,
+                "FastQuantizer sign symmetry broken for {}: +={}, -={}",
+                v, qp, qn
+            );
         }
     }
 
@@ -937,7 +958,11 @@ mod tests {
         let rdo = AnalyticalRDO::with_quality(100);
         assert_eq!(rdo.quality(), 100);
         // Quality 100 should give highest bpp
-        assert!(rdo.target_bpp() > 20.0, "Quality 100 bpp {} too low", rdo.target_bpp());
+        assert!(
+            rdo.target_bpp() > 20.0,
+            "Quality 100 bpp {} too low",
+            rdo.target_bpp()
+        );
     }
 
     #[test]
@@ -957,14 +982,20 @@ mod tests {
 
         // All steps should be positive
         for (i, q) in quantizers.iter().enumerate() {
-            assert!(q.step > 0, "Quantizer {} has non-positive step: {}", i, q.step);
+            assert!(
+                q.step > 0,
+                "Quantizer {} has non-positive step: {}",
+                i,
+                q.step
+            );
         }
 
         // LLL (index 0) should have smallest step, HHH (index 7) largest
         assert!(
             quantizers[7].step >= quantizers[0].step,
             "HHH step {} should >= LLL step {}",
-            quantizers[7].step, quantizers[0].step
+            quantizers[7].step,
+            quantizers[0].step
         );
     }
 

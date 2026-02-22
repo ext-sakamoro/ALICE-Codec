@@ -9,10 +9,15 @@
 //! | L3 | Batch API (whole-frame ops) | FFI amortization |
 //! | L4 | Rust backend (segment, wavelet, rANS) | Hardware-speed |
 
+use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
-use numpy::{PyArray1, PyArray2, PyReadonlyArray2, IntoPyArray, PyArrayMethods};
 
-use crate::segment::{SegmentConfig, SegmentResult, segment_by_motion, segment_by_chroma, crop_to_bbox, paste_from_bbox};
+use crate::color::{rgb_bytes_to_ycocg_r, ycocg_r_to_rgb_bytes};
+use crate::pipeline::{EncodedChunk, FrameDecoder, FrameEncoder};
+use crate::segment::{
+    crop_to_bbox, paste_from_bbox, segment_by_chroma, segment_by_motion, SegmentConfig,
+    SegmentResult,
+};
 
 /// Wrapper for raw pointer that implements Send (for GIL release)
 struct SendPtr(*const u8, usize);
@@ -22,11 +27,15 @@ struct SendPtr(*const u8, usize);
 unsafe impl Send for SendPtr {}
 impl SendPtr {
     #[inline]
-    fn new(ptr: *const u8, len: usize) -> Self { Self(ptr, len) }
+    fn new(ptr: *const u8, len: usize) -> Self {
+        Self(ptr, len)
+    }
     #[inline]
     // SAFETY: Caller guarantees pointer is valid and the len matches the original slice.
     // Used only inside py.allow_threads() with data from a live NumPy array.
-    unsafe fn as_slice(&self) -> &[u8] { std::slice::from_raw_parts(self.0, self.1) }
+    unsafe fn as_slice(&self) -> &[u8] {
+        std::slice::from_raw_parts(self.0, self.1)
+    }
 }
 
 struct SendPtrI16(*const i16, usize);
@@ -34,10 +43,14 @@ struct SendPtrI16(*const i16, usize);
 unsafe impl Send for SendPtrI16 {}
 impl SendPtrI16 {
     #[inline]
-    fn new(ptr: *const i16, len: usize) -> Self { Self(ptr, len) }
+    fn new(ptr: *const i16, len: usize) -> Self {
+        Self(ptr, len)
+    }
     #[inline]
     // SAFETY: Caller guarantees pointer is valid and len matches the original i16 slice.
-    unsafe fn as_slice(&self) -> &[i16] { std::slice::from_raw_parts(self.0, self.1) }
+    unsafe fn as_slice(&self) -> &[i16] {
+        std::slice::from_raw_parts(self.0, self.1)
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -95,7 +108,10 @@ fn segment_motion_numpy<'py>(
     });
 
     // Zero-copy output: mask → NumPy array
-    let mask_array = result.mask.into_pyarray(py).reshape([h, w])
+    let mask_array = result
+        .mask
+        .into_pyarray(py)
+        .reshape([h, w])
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:?}", e)))?;
     let bbox = result.bbox.to_vec();
 
@@ -126,15 +142,15 @@ fn segment_chroma_numpy<'py>(
     let cg_arr = cg_channel.as_array();
     let (h, w) = (y_arr.shape()[0], y_arr.shape()[1]);
 
-    let y_slice = y_arr.as_slice().ok_or_else(|| {
-        pyo3::exceptions::PyValueError::new_err("Y array must be C-contiguous")
-    })?;
-    let co_slice = co_arr.as_slice().ok_or_else(|| {
-        pyo3::exceptions::PyValueError::new_err("Co array must be C-contiguous")
-    })?;
-    let cg_slice = cg_arr.as_slice().ok_or_else(|| {
-        pyo3::exceptions::PyValueError::new_err("Cg array must be C-contiguous")
-    })?;
+    let y_slice = y_arr
+        .as_slice()
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Y array must be C-contiguous"))?;
+    let co_slice = co_arr
+        .as_slice()
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Co array must be C-contiguous"))?;
+    let cg_slice = cg_arr
+        .as_slice()
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Cg array must be C-contiguous"))?;
 
     let y_send = SendPtrI16::new(y_slice.as_ptr(), y_slice.len());
     let co_send = SendPtrI16::new(co_slice.as_ptr(), co_slice.len());
@@ -149,7 +165,10 @@ fn segment_chroma_numpy<'py>(
         segment_by_chroma(y, co, cg, w as u32, h as u32, green_threshold)
     });
 
-    let mask_array = result.mask.into_pyarray(py).reshape([h, w])
+    let mask_array = result
+        .mask
+        .into_pyarray(py)
+        .reshape([h, w])
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:?}", e)))?;
     let bbox = result.bbox.to_vec();
     Ok((mask_array, bbox, result.foreground_count))
@@ -170,18 +189,22 @@ fn crop_bbox_numpy<'py>(
     bbox: Vec<u32>,
 ) -> PyResult<Bound<'py, PyArray2<u8>>> {
     if bbox.len() != 4 {
-        return Err(pyo3::exceptions::PyValueError::new_err("bbox must have 4 elements"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "bbox must have 4 elements",
+        ));
     }
     let arr = frame.as_array();
     let w = arr.shape()[1] as u32;
-    let slice = arr.as_slice().ok_or_else(|| {
-        pyo3::exceptions::PyValueError::new_err("Frame must be C-contiguous")
-    })?;
+    let slice = arr
+        .as_slice()
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Frame must be C-contiguous"))?;
     let bbox_arr = [bbox[0], bbox[1], bbox[2], bbox[3]];
     let cropped = crop_to_bbox(slice, w, &bbox_arr);
     let bw = bbox[2] as usize;
     let bh = bbox[3] as usize;
-    cropped.into_pyarray(py).reshape([bh, bw])
+    cropped
+        .into_pyarray(py)
+        .reshape([bh, bw])
         .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("{:?}", e)))
 }
 
@@ -198,7 +221,9 @@ fn paste_bbox_numpy(
     bbox: Vec<u32>,
 ) -> PyResult<()> {
     if bbox.len() != 4 {
-        return Err(pyo3::exceptions::PyValueError::new_err("bbox must have 4 elements"));
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "bbox must have 4 elements",
+        ));
     }
     // SAFETY: frame is a valid PyArray2 bound to the Python interpreter.
     // dims() returns the array shape which is always valid for a 2D array.
@@ -222,9 +247,9 @@ fn paste_bbox_numpy(
 #[pyfunction]
 fn rle_encode_numpy(mask: PyReadonlyArray2<u8>) -> PyResult<Vec<u8>> {
     let arr = mask.as_array();
-    let slice = arr.as_slice().ok_or_else(|| {
-        pyo3::exceptions::PyValueError::new_err("Mask must be C-contiguous")
-    })?;
+    let slice = arr
+        .as_slice()
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("Mask must be C-contiguous"))?;
     let result = SegmentResult {
         mask: slice.to_vec(),
         bbox: [0, 0, 0, 0],
@@ -242,12 +267,280 @@ fn version() -> &'static str {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Pipeline (Opaque Pointer + GIL Release + Zero-Copy NumPy)
+// ═══════════════════════════════════════════════════════════════
+
+/// Opaque wrapper around [`EncodedChunk`] for Python.
+///
+/// Holds the compressed bitstream produced by [`PyFrameEncoder`] and consumed
+/// by [`PyFrameDecoder`].  Exposes metadata but not internal buffers.
+#[pyclass(name = "EncodedChunk")]
+struct PyEncodedChunk {
+    inner: EncodedChunk,
+}
+
+#[pymethods]
+impl PyEncodedChunk {
+    /// Total compressed payload size in bytes.
+    #[getter]
+    fn compressed_size(&self) -> usize {
+        self.inner.compressed_size()
+    }
+
+    /// Frame width in pixels.
+    #[getter]
+    fn width(&self) -> u32 {
+        self.inner.width
+    }
+
+    /// Frame height in pixels.
+    #[getter]
+    fn height(&self) -> u32 {
+        self.inner.height
+    }
+
+    /// Number of frames in this chunk.
+    #[getter]
+    fn frames(&self) -> u32 {
+        self.inner.frames
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "EncodedChunk({}x{}x{}, {} bytes)",
+            self.inner.width,
+            self.inner.height,
+            self.inner.frames,
+            self.inner.compressed_size()
+        )
+    }
+}
+
+/// Video frame encoder (GIL-released, SIMD-accelerated).
+///
+/// Example:
+///     >>> encoder = alice_codec.FrameEncoder(quality=90)
+///     >>> chunk = encoder.encode(rgb_array, 640, 480, 2)
+///     >>> print(chunk.compressed_size)
+#[pyclass(name = "FrameEncoder")]
+struct PyFrameEncoder {
+    inner: FrameEncoder,
+}
+
+#[pymethods]
+impl PyFrameEncoder {
+    /// Create an encoder with quality 0-100 (100 = near-lossless).
+    #[new]
+    #[pyo3(signature = (quality=90))]
+    fn new(quality: u8) -> Self {
+        Self {
+            inner: FrameEncoder::new(quality),
+        }
+    }
+
+    /// Encode interleaved RGB frames into a compressed chunk.
+    ///
+    /// Args:
+    ///     rgb_frames: 1-D uint8 NumPy array [R0,G0,B0, R1,G1,B1, ...]
+    ///     width: Frame width in pixels
+    ///     height: Frame height in pixels
+    ///     frames: Number of frames
+    ///
+    /// Returns:
+    ///     EncodedChunk containing the compressed bitstream.
+    fn encode(
+        &self,
+        py: Python<'_>,
+        rgb_frames: PyReadonlyArray1<'_, u8>,
+        width: u32,
+        height: u32,
+        frames: u32,
+    ) -> PyResult<PyEncodedChunk> {
+        let arr = rgb_frames.as_array();
+        let slice = arr.as_slice().ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err("rgb_frames must be C-contiguous")
+        })?;
+
+        let expected = (width as usize) * (height as usize) * (frames as usize) * 3;
+        if slice.len() != expected {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "rgb_frames length {} != width*height*frames*3 = {}",
+                slice.len(),
+                expected
+            )));
+        }
+
+        let send = SendPtr::new(slice.as_ptr(), slice.len());
+        let quality = self.inner.quality;
+
+        let chunk = py.allow_threads(move || {
+            // SAFETY: Pointer from C-contiguous NumPy array, kept alive by Python GC.
+            let data = unsafe { send.as_slice() };
+            let enc = FrameEncoder::new(quality);
+            enc.encode(data, width, height, frames)
+        });
+
+        Ok(PyEncodedChunk { inner: chunk })
+    }
+}
+
+/// Video frame decoder (GIL-released).
+///
+/// Example:
+///     >>> decoder = alice_codec.FrameDecoder()
+///     >>> rgb = decoder.decode(chunk)  # numpy uint8 array
+#[pyclass(name = "FrameDecoder")]
+struct PyFrameDecoder {
+    inner: FrameDecoder,
+}
+
+#[pymethods]
+impl PyFrameDecoder {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: FrameDecoder::new(),
+        }
+    }
+
+    /// Decode a compressed chunk back to interleaved RGB bytes.
+    ///
+    /// Args:
+    ///     chunk: EncodedChunk from FrameEncoder.encode()
+    ///
+    /// Returns:
+    ///     1-D uint8 NumPy array [R0,G0,B0, R1,G1,B1, ...]
+    fn decode<'py>(
+        &self,
+        py: Python<'py>,
+        chunk: &PyEncodedChunk,
+    ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        // Clone the chunk so we can move it into the GIL-released closure.
+        let chunk_clone = chunk.inner.clone();
+
+        let rgb = py.allow_threads(move || {
+            let dec = FrameDecoder::new();
+            dec.decode(&chunk_clone)
+        });
+
+        Ok(rgb.into_pyarray(py))
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Color Conversion (NumPy Zero-Copy + GIL Release)
+// ═══════════════════════════════════════════════════════════════
+
+/// Convert interleaved RGB bytes to planar YCoCg-R channels.
+///
+/// Args:
+///     rgb_bytes: 1-D uint8 NumPy array [R0,G0,B0, R1,G1,B1, ...]
+///
+/// Returns:
+///     Tuple of (y, co, cg) each as 1-D int16 NumPy array.
+#[pyfunction]
+fn rgb_to_ycocg_r_numpy<'py>(
+    py: Python<'py>,
+    rgb_bytes: PyReadonlyArray1<'py, u8>,
+) -> PyResult<(
+    Bound<'py, PyArray1<i16>>,
+    Bound<'py, PyArray1<i16>>,
+    Bound<'py, PyArray1<i16>>,
+)> {
+    let arr = rgb_bytes.as_array();
+    let slice = arr
+        .as_slice()
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("rgb_bytes must be C-contiguous"))?;
+    if slice.len() % 3 != 0 {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "rgb_bytes length must be a multiple of 3",
+        ));
+    }
+    let n_pixels = slice.len() / 3;
+    let send = SendPtr::new(slice.as_ptr(), slice.len());
+
+    let (y, co, cg) = py.allow_threads(move || {
+        // SAFETY: Pointer from C-contiguous NumPy array, kept alive by Python GC.
+        let data = unsafe { send.as_slice() };
+        let mut y_out = vec![0i16; n_pixels];
+        let mut co_out = vec![0i16; n_pixels];
+        let mut cg_out = vec![0i16; n_pixels];
+        rgb_bytes_to_ycocg_r(data, &mut y_out, &mut co_out, &mut cg_out);
+        (y_out, co_out, cg_out)
+    });
+
+    Ok((y.into_pyarray(py), co.into_pyarray(py), cg.into_pyarray(py)))
+}
+
+/// Convert planar YCoCg-R channels back to interleaved RGB bytes.
+///
+/// Args:
+///     y: 1-D int16 NumPy array (Y channel)
+///     co: 1-D int16 NumPy array (Co channel)
+///     cg: 1-D int16 NumPy array (Cg channel)
+///
+/// Returns:
+///     1-D uint8 NumPy array [R0,G0,B0, R1,G1,B1, ...]
+#[pyfunction]
+fn ycocg_r_to_rgb_numpy<'py>(
+    py: Python<'py>,
+    y: PyReadonlyArray1<'py, i16>,
+    co: PyReadonlyArray1<'py, i16>,
+    cg: PyReadonlyArray1<'py, i16>,
+) -> PyResult<Bound<'py, PyArray1<u8>>> {
+    let y_arr = y.as_array();
+    let co_arr = co.as_array();
+    let cg_arr = cg.as_array();
+
+    if y_arr.len() != co_arr.len() || y_arr.len() != cg_arr.len() {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "y, co, cg arrays must have the same length",
+        ));
+    }
+
+    let y_slice = y_arr
+        .as_slice()
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("y must be C-contiguous"))?;
+    let co_slice = co_arr
+        .as_slice()
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("co must be C-contiguous"))?;
+    let cg_slice = cg_arr
+        .as_slice()
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("cg must be C-contiguous"))?;
+
+    let y_send = SendPtrI16::new(y_slice.as_ptr(), y_slice.len());
+    let co_send = SendPtrI16::new(co_slice.as_ptr(), co_slice.len());
+    let cg_send = SendPtrI16::new(cg_slice.as_ptr(), cg_slice.len());
+
+    let rgb = py.allow_threads(move || {
+        // SAFETY: Pointers from C-contiguous NumPy i16 arrays, kept alive by Python GC.
+        let y_data = unsafe { y_send.as_slice() };
+        let co_data = unsafe { co_send.as_slice() };
+        let cg_data = unsafe { cg_send.as_slice() };
+        let mut out = vec![0u8; y_data.len() * 3];
+        ycocg_r_to_rgb_bytes(y_data, co_data, cg_data, &mut out);
+        out
+    });
+
+    Ok(rgb.into_pyarray(py))
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Python Module
 // ═══════════════════════════════════════════════════════════════
 
 /// ALICE Codec - Hyper-Fast 3D Wavelet Video/Audio Codec
 #[pymodule]
 fn alice_codec(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Pipeline (opaque pointer + GIL release)
+    m.add_class::<PyFrameEncoder>()?;
+    m.add_class::<PyFrameDecoder>()?;
+    m.add_class::<PyEncodedChunk>()?;
+
+    // Color conversion (NumPy zero-copy + GIL release)
+    m.add_function(wrap_pyfunction!(rgb_to_ycocg_r_numpy, m)?)?;
+    m.add_function(wrap_pyfunction!(ycocg_r_to_rgb_numpy, m)?)?;
+
     // Segmentation (NumPy zero-copy + GIL release)
     m.add_function(wrap_pyfunction!(segment_motion_numpy, m)?)?;
     m.add_function(wrap_pyfunction!(segment_chroma_numpy, m)?)?;
