@@ -46,6 +46,7 @@ pub struct RGB {
 }
 
 impl RGB {
+    /// Create a new RGB pixel.
     #[must_use]
     #[inline]
     pub const fn new(r: u8, g: u8, b: u8) -> Self {
@@ -54,6 +55,7 @@ impl RGB {
 }
 
 impl YCoCgR {
+    /// Create a new YCoCg-R pixel.
     #[must_use]
     #[inline]
     pub const fn new(y: i16, co: i16, cg: i16) -> Self {
@@ -285,6 +287,10 @@ mod simd {
     /// # Safety
     ///
     /// Requires AVX2 support.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input and output slices have different lengths.
     #[target_feature(enable = "avx2")]
     pub unsafe fn rgb_to_ycocg_r_avx2(
         r: &[i16],
@@ -350,6 +356,10 @@ mod simd {
     /// # Safety
     ///
     /// Requires AVX2 support.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input and output slices have different lengths.
     #[target_feature(enable = "avx2")]
     pub unsafe fn ycocg_r_to_rgb_avx2(
         y: &[i16],

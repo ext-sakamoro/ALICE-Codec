@@ -29,6 +29,18 @@
 use alloc::vec::Vec;
 
 /// 1D Wavelet Transform
+///
+/// # Example
+///
+/// ```
+/// use alice_codec::Wavelet1D;
+///
+/// let wavelet = Wavelet1D::cdf53();
+/// let mut signal = [10i32, 20, 30, 40, 50, 60, 70, 80];
+/// wavelet.forward(&mut signal);
+/// wavelet.inverse(&mut signal);
+/// assert_eq!(signal, [10, 20, 30, 40, 50, 60, 70, 80]);
+/// ```
 #[derive(Clone, Debug)]
 pub struct Wavelet1D {
     /// Lifting steps (predict/update pairs)
@@ -235,6 +247,18 @@ impl Wavelet1D {
 }
 
 /// 2D Wavelet Transform
+///
+/// # Example
+///
+/// ```
+/// use alice_codec::Wavelet2D;
+///
+/// let wavelet = Wavelet2D::cdf53();
+/// let mut image = vec![0i32; 8 * 8];
+/// for (i, v) in image.iter_mut().enumerate() { *v = (i * 7 % 256) as i32; }
+/// wavelet.forward(&mut image, 8, 8);
+/// wavelet.inverse(&mut image, 8, 8);
+/// ```
 #[derive(Clone, Debug)]
 pub struct Wavelet2D {
     wavelet_1d: Wavelet1D,
@@ -317,6 +341,18 @@ impl Wavelet2D {
 /// 3D Wavelet Transform (Video)
 ///
 /// Treats video as (x, y, t) volume. No I/P/B frames.
+///
+/// # Example
+///
+/// ```
+/// use alice_codec::Wavelet3D;
+///
+/// let wavelet = Wavelet3D::cdf53();
+/// let mut volume = vec![0i32; 4 * 4 * 2];
+/// for (i, v) in volume.iter_mut().enumerate() { *v = (i * 3 % 256) as i32; }
+/// wavelet.forward(&mut volume, 4, 4, 2);
+/// wavelet.inverse(&mut volume, 4, 4, 2);
+/// ```
 #[derive(Clone, Debug)]
 pub struct Wavelet3D {
     wavelet_1d: Wavelet1D,

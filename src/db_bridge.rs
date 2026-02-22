@@ -57,8 +57,19 @@ pub struct CodecMetricsSink {
     db_encode_time: AliceDB,
 }
 
+impl std::fmt::Debug for CodecMetricsSink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CodecMetricsSink").finish_non_exhaustive()
+    }
+}
+
 impl CodecMetricsSink {
     /// Open (or create) metric databases at the given directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if the directory cannot be created or
+    /// the underlying databases fail to open.
     pub fn open<P: AsRef<Path>>(dir: P) -> io::Result<Self> {
         let dir = dir.as_ref();
         std::fs::create_dir_all(dir)?;
@@ -70,6 +81,10 @@ impl CodecMetricsSink {
     }
 
     /// Record a single metric sample.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if writing to any metric database fails.
     pub fn record(&self, m: &CodecMetrics) -> io::Result<()> {
         self.db_bitrate.put(m.timestamp_ms, m.bitrate_bps)?;
         self.db_psnr.put(m.timestamp_ms, m.psnr_db)?;
@@ -78,6 +93,10 @@ impl CodecMetricsSink {
     }
 
     /// Record a batch of metric samples (more efficient than individual puts).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if writing to any metric database fails.
     pub fn record_batch(&self, metrics: &[CodecMetrics]) -> io::Result<()> {
         let bitrate: Vec<(i64, f32)> = metrics
             .iter()
@@ -99,36 +118,64 @@ impl CodecMetricsSink {
     }
 
     /// Query raw bitrate samples in a time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if the database read fails.
     pub fn query_bitrate(&self, start: i64, end: i64) -> io::Result<Vec<(i64, f32)>> {
         self.db_bitrate.scan(start, end)
     }
 
     /// Query raw PSNR samples in a time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if the database read fails.
     pub fn query_psnr(&self, start: i64, end: i64) -> io::Result<Vec<(i64, f32)>> {
         self.db_psnr.scan(start, end)
     }
 
     /// Query raw encode-time samples in a time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if the database read fails.
     pub fn query_encode_time(&self, start: i64, end: i64) -> io::Result<Vec<(i64, f32)>> {
         self.db_encode_time.scan(start, end)
     }
 
     /// Average bitrate over a time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if the aggregation query fails.
     pub fn average_bitrate(&self, start: i64, end: i64) -> io::Result<f64> {
         self.db_bitrate.aggregate(start, end, Aggregation::Avg)
     }
 
     /// Average PSNR over a time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if the aggregation query fails.
     pub fn average_psnr(&self, start: i64, end: i64) -> io::Result<f64> {
         self.db_psnr.aggregate(start, end, Aggregation::Avg)
     }
 
     /// P99 encode time (approximated via Max over small intervals).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if the aggregation query fails.
     pub fn max_encode_time(&self, start: i64, end: i64) -> io::Result<f64> {
         self.db_encode_time.aggregate(start, end, Aggregation::Max)
     }
 
     /// Downsample bitrate for dashboard display.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if the downsample query fails.
     pub fn downsample_bitrate(
         &self,
         start: i64,
@@ -140,6 +187,10 @@ impl CodecMetricsSink {
     }
 
     /// Downsample PSNR for dashboard display.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if the downsample query fails.
     pub fn downsample_psnr(
         &self,
         start: i64,
@@ -151,6 +202,10 @@ impl CodecMetricsSink {
     }
 
     /// Flush all metric databases to disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] if flushing any database fails.
     pub fn flush(&self) -> io::Result<()> {
         self.db_bitrate.flush()?;
         self.db_psnr.flush()?;

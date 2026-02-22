@@ -25,8 +25,12 @@ pub struct SealedBitstream {
 
 /// Encrypt a compressed bitstream using XChaCha20-Poly1305.
 ///
-/// The returned `SealedBitstream` contains the nonce, ciphertext, and
+/// The returned [`SealedBitstream`] contains the nonce, ciphertext, and
 /// authentication tag. The key must be 32 bytes.
+///
+/// # Errors
+///
+/// Returns [`CipherError`] if the underlying AEAD operation fails.
 pub fn seal_bitstream(plaintext: &[u8], key: &Key) -> Result<SealedBitstream, CipherError> {
     let sealed = crypto::seal(key, plaintext)?;
     Ok(SealedBitstream {
@@ -36,6 +40,10 @@ pub fn seal_bitstream(plaintext: &[u8], key: &Key) -> Result<SealedBitstream, Ci
 }
 
 /// Decrypt a sealed bitstream back to the original compressed data.
+///
+/// # Errors
+///
+/// Returns [`CipherError`] if decryption fails (wrong key, tampered data, etc.).
 pub fn open_bitstream(sealed: &SealedBitstream, key: &Key) -> Result<Vec<u8>, CipherError> {
     crypto::open(key, &sealed.data)
 }
@@ -44,6 +52,7 @@ pub fn open_bitstream(sealed: &SealedBitstream, key: &Key) -> Result<Vec<u8>, Ci
 ///
 /// Useful for content-addressed storage or deduplication
 /// without needing to decrypt.
+#[must_use]
 pub fn content_hash(data: &[u8]) -> crypto::Hash {
     crypto::hash(data)
 }
@@ -52,6 +61,7 @@ pub fn content_hash(data: &[u8]) -> crypto::Hash {
 ///
 /// Uses BLAKE3 key derivation (not suitable for weak passwords;
 /// use a proper KDF like Argon2 for user passwords).
+#[must_use]
 pub fn derive_key(context: &str, passphrase: &[u8]) -> Key {
     let raw = crypto::derive_key(context, passphrase);
     Key::from_bytes(raw)

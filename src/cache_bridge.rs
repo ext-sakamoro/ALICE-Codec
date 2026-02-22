@@ -6,7 +6,7 @@
 use alice_cache::AliceCache;
 
 /// Cached decoded frame.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CachedFrame {
     /// Raw pixel data (YCoCg-R or RGB, depending on pipeline stage).
     pub data: Vec<u8>,
@@ -17,7 +17,7 @@ pub struct CachedFrame {
 }
 
 /// Frame cache key: (chunk_index, sub_band, frame_within_chunk).
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FrameKey {
     /// Chunk index in the stream.
     pub chunk: u32,
@@ -35,12 +35,21 @@ pub struct FrameCache {
     cache: AliceCache<FrameKey, CachedFrame>,
 }
 
+impl std::fmt::Debug for FrameCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FrameCache")
+            .field("len", &self.cache.len())
+            .finish_non_exhaustive()
+    }
+}
+
 impl FrameCache {
     /// Create a new frame cache.
     ///
     /// `capacity` is the number of decoded frames to keep.
     /// For 1080p YCoCg-R (3 bytes/pixel), each frame ≈ 6 MB,
     /// so 64 frames ≈ 384 MB.
+    #[must_use]
     pub fn new(capacity: usize) -> Self {
         Self {
             cache: AliceCache::new(capacity),
@@ -48,6 +57,7 @@ impl FrameCache {
     }
 
     /// Look up a cached decoded frame.
+    #[must_use]
     pub fn get(&self, chunk: u32, frame: u16, quality: u8) -> Option<CachedFrame> {
         let key = FrameKey {
             chunk,
@@ -75,16 +85,19 @@ impl FrameCache {
     }
 
     /// Cache hit rate.
+    #[must_use]
     pub fn hit_rate(&self) -> f64 {
         self.cache.hit_rate()
     }
 
     /// Number of cached frames.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.cache.len()
     }
 
     /// Whether the cache is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }

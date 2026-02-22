@@ -2,6 +2,7 @@
 name = "alice-codec"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.87"
 authors = ["Moroya Sakamoto <ext-sakamoro@github.com>"]
 description = "Hyper-Fast 3D Wavelet Video Codec"
 license = "AGPL-3.0"

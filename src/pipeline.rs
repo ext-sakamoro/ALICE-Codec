@@ -151,6 +151,21 @@ const FIXED_HEADER_BYTES: usize = 4 + 1 + 1 + 4 + 4 + 4; // 18
 /// [`FrameDecoder::decode`].  Can be serialized to bytes via
 /// [`to_bytes`](Self::to_bytes) and deserialized via
 /// [`from_bytes`](Self::from_bytes).
+///
+/// # Example
+///
+/// ```
+/// use alice_codec::{FrameEncoder, FrameDecoder};
+/// use alice_codec::pipeline::EncodedChunk;
+///
+/// let rgb = vec![128u8; 4 * 4 * 2 * 3];
+/// let chunk = FrameEncoder::new(80).encode(&rgb, 4, 4, 2).unwrap();
+///
+/// // Serialize / deserialize
+/// let bytes = chunk.to_bytes();
+/// let restored = EncodedChunk::from_bytes(&bytes).unwrap();
+/// assert_eq!(restored.width, 4);
+/// ```
 #[derive(Clone, Debug)]
 pub struct EncodedChunk {
     /// Frame width in pixels.
@@ -302,6 +317,19 @@ impl EncodedChunk {
 ///
 /// Compresses interleaved RGB byte frames through the full pipeline:
 /// color conversion, 3-D wavelet, quantization, and rANS entropy coding.
+///
+/// # Example
+///
+/// ```
+/// use alice_codec::{FrameEncoder, FrameDecoder};
+///
+/// let rgb = vec![128u8; 4 * 4 * 2 * 3]; // 4x4, 2 frames, RGB
+/// let encoder = FrameEncoder::new(80);
+/// let chunk = encoder.encode(&rgb, 4, 4, 2).unwrap();
+/// let decoded = FrameDecoder::new().decode(&chunk).unwrap();
+/// assert_eq!(decoded.len(), rgb.len());
+/// ```
+#[derive(Clone, Copy, Debug)]
 pub struct FrameEncoder {
     /// Quality setting (0-100). Accessible within the crate for Python bindings.
     pub(crate) quality: u8,
@@ -314,7 +342,7 @@ impl FrameEncoder {
     ///
     /// Quality 0 yields maximum compression; quality 100 is near-lossless.
     #[must_use]
-    pub fn new(quality: u8) -> Self {
+    pub const fn new(quality: u8) -> Self {
         Self {
             quality,
             wavelet_type: WaveletType::Cdf53,
@@ -323,7 +351,7 @@ impl FrameEncoder {
 
     /// Create an encoder with explicit quality and wavelet type.
     #[must_use]
-    pub fn with_wavelet(quality: u8, wavelet_type: WaveletType) -> Self {
+    pub const fn with_wavelet(quality: u8, wavelet_type: WaveletType) -> Self {
         Self {
             quality,
             wavelet_type,
@@ -483,12 +511,15 @@ impl FrameEncoder {
 ///
 /// Reconstructs interleaved RGB byte frames from a compressed
 /// [`EncodedChunk`].
+///
+/// See [`FrameEncoder`] for a full encode/decode example.
+#[derive(Clone, Copy, Debug)]
 pub struct FrameDecoder;
 
 impl FrameDecoder {
     /// Create a new decoder.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self
     }
 

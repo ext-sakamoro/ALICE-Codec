@@ -38,11 +38,18 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-/// rANS state type (64-bit for precision)
+/// rANS state type.
+///
+/// 64-bit alias reserved for future high-precision rANS variants.
+/// The current encoder/decoder implementations use 32-bit internal state.
 pub type RansState = u64;
 
-/// Probability scale (12-bit precision = 4096)
+/// Number of bits used for probability precision.
 pub const PROB_BITS: u32 = 12;
+
+/// Total probability space (2^[`PROB_BITS`] = 4096).
+///
+/// All symbol frequencies in a [`FrequencyTable`] must sum to this value.
 pub const PROB_SCALE: u32 = 1 << PROB_BITS;
 
 /// Symbol frequency entry for encoding/decoding
@@ -63,6 +70,15 @@ impl RansSymbol {
 }
 
 /// Frequency table for rANS coding
+///
+/// # Example
+///
+/// ```
+/// use alice_codec::rans::FrequencyTable;
+///
+/// let table = FrequencyTable::uniform(256);
+/// assert_eq!(table.len(), 256);
+/// ```
 #[derive(Clone, Debug)]
 pub struct FrequencyTable {
     /// Symbol frequencies (indexed by symbol value)
@@ -201,6 +217,22 @@ impl FrequencyTable {
 }
 
 /// rANS Encoder (32-bit state for simplicity)
+///
+/// # Example
+///
+/// ```
+/// use alice_codec::rans::{RansEncoder, RansDecoder, FrequencyTable};
+///
+/// let table = FrequencyTable::uniform(256);
+/// let mut encoder = RansEncoder::new();
+/// encoder.encode_symbols(&[42, 100, 200], &table);
+/// let encoded = encoder.finish();
+///
+/// let mut decoder = RansDecoder::new(&encoded);
+/// let decoded = decoder.decode_n(3, &table);
+/// assert_eq!(decoded, [42, 100, 200]);
+/// ```
+#[derive(Debug)]
 pub struct RansEncoder {
     state: u32,
     output: Vec<u8>,
@@ -281,6 +313,9 @@ impl Default for RansEncoder {
 }
 
 /// rANS Decoder (32-bit state)
+///
+/// See [`RansEncoder`] for a full encode/decode example.
+#[derive(Debug)]
 pub struct RansDecoder<'a> {
     state: u32,
     input: &'a [u8],
@@ -334,6 +369,7 @@ impl<'a> RansDecoder<'a> {
     }
 
     /// Decode multiple symbols
+    #[must_use]
     pub fn decode_n(&mut self, n: usize, table: &FrequencyTable) -> Vec<u8> {
         let mut output = Vec::with_capacity(n);
         for _ in 0..n {
@@ -351,6 +387,7 @@ impl<'a> RansDecoder<'a> {
 }
 
 /// Interleaved 4-stream rANS encoder for SIMD parallelism
+#[derive(Debug)]
 pub struct InterleavedRansEncoder {
     encoders: [RansEncoder; 4],
     symbol_count: [usize; 4],
@@ -422,6 +459,7 @@ impl Default for InterleavedRansEncoder {
 }
 
 /// Interleaved 4-stream rANS decoder
+#[derive(Debug)]
 pub struct InterleavedRansDecoder<'a> {
     decoders: [RansDecoder<'a>; 4],
     stream_idx: usize,
@@ -463,6 +501,7 @@ impl<'a> InterleavedRansDecoder<'a> {
     }
 
     /// Decode n symbols from interleaved streams
+    #[must_use]
     pub fn decode_n(&mut self, n: usize, table: &FrequencyTable) -> Vec<u8> {
         let mut output = Vec::with_capacity(n);
 
@@ -490,6 +529,7 @@ impl<'a> InterleavedRansDecoder<'a> {
 ///
 /// Processes 4 rANS streams in parallel using AVX2 for state updates.
 /// Table lookups remain scalar (gather is expensive), but arithmetic is vectorized.
+#[derive(Debug)]
 pub struct SimdRansDecoder<'a> {
     /// 4 interleaved states
     states: [u32; 4],
@@ -525,6 +565,7 @@ impl<'a> SimdRansDecoder<'a> {
     /// Decode 4 symbols in parallel (scalar fallback)
     ///
     /// This version works on all platforms.
+    #[must_use]
     pub fn decode_4(&mut self, table: &FrequencyTable) -> [u8; 4] {
         let mut symbols = [0u8; 4];
 
@@ -557,6 +598,7 @@ impl<'a> SimdRansDecoder<'a> {
     /// # Panics
     ///
     /// Panics if `n` is not a multiple of 4.
+    #[must_use]
     pub fn decode_n(&mut self, n: usize, table: &FrequencyTable) -> Vec<u8> {
         assert!(
             n.is_multiple_of(4),
@@ -642,6 +684,10 @@ mod simd {
         /// # Safety
         ///
         /// Requires AVX2 support.
+        ///
+        /// # Panics
+        ///
+        /// Panics if `n` is not a multiple of 4.
         #[target_feature(enable = "avx2")]
         pub unsafe fn decode_n_avx2(&mut self, n: usize, table: &FrequencyTable) -> Vec<u8> {
             assert!(

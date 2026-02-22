@@ -24,6 +24,7 @@ impl SubBandClassifier {
     /// - `weights`: ternary values (num_classes × input_dim).
     /// - `input_dim`: number of sub-band statistical features.
     /// - `num_classes`: number of quantization strategy classes.
+    #[must_use]
     pub fn new(weights: &[i8], input_dim: usize, num_classes: usize) -> Self {
         Self {
             weights: TernaryWeight::from_ternary(weights, num_classes, input_dim),
@@ -38,6 +39,11 @@ impl SubBandClassifier {
     /// spatial_complexity, etc.
     ///
     /// Returns (class_index, confidence_score).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the logits vector is empty (no classes defined).
+    #[must_use]
     pub fn classify(&self, features: &[f32]) -> (usize, f32) {
         debug_assert_eq!(features.len(), self.input_dim);
         let mut logits = vec![0.0f32; self.num_classes];
@@ -58,10 +64,12 @@ impl SubBandClassifier {
     }
 
     /// Input dimension.
+    #[must_use]
     pub fn input_dim(&self) -> usize {
         self.input_dim
     }
     /// Number of classes.
+    #[must_use]
     pub fn num_classes(&self) -> usize {
         self.num_classes
     }
@@ -82,6 +90,7 @@ impl MotionPredictor {
     ///
     /// - `weights`: ternary values (2 × input_dim) for dx, dy prediction.
     /// - `input_dim`: block feature dimension.
+    #[must_use]
     pub fn new(weights: &[i8], input_dim: usize) -> Self {
         Self {
             weights: TernaryWeight::from_ternary(weights, 2, input_dim),
@@ -90,11 +99,29 @@ impl MotionPredictor {
     }
 
     /// Predict motion vector (dx, dy) from block features.
+    #[must_use]
     pub fn predict(&self, features: &[f32]) -> (f32, f32) {
         debug_assert_eq!(features.len(), self.input_dim);
         let mut out = [0.0f32; 2];
         ternary_matvec(features, &self.weights, &mut out);
         (out[0], out[1])
+    }
+}
+
+impl core::fmt::Debug for SubBandClassifier {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SubBandClassifier")
+            .field("input_dim", &self.input_dim)
+            .field("num_classes", &self.num_classes)
+            .finish_non_exhaustive()
+    }
+}
+
+impl core::fmt::Debug for MotionPredictor {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MotionPredictor")
+            .field("input_dim", &self.input_dim)
+            .finish_non_exhaustive()
     }
 }
 

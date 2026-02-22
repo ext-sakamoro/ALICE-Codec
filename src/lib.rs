@@ -30,6 +30,19 @@
 //!
 //! // signal now contains [low-pass..., high-pass...]
 //! ```
+//!
+//! # Feature Flags
+//!
+//! | Feature  | Default | Description |
+//! |----------|---------|-------------|
+//! | `std`    | **yes** | Enables standard-library types (`Vec`, `String`). Disable for `no_std`. |
+//! | `cli`    | no      | Builds the `alice-codec` command-line binary. |
+//! | `simd`   | no      | Enables AVX2 SIMD paths for rANS decoding. |
+//! | `python` | no      | PyO3 + NumPy bindings for Python interop. |
+//! | `ml`     | no      | ALICE-ML ternary inference for sub-band classification. |
+//! | `db`     | no      | ALICE-DB metrics storage for encoding monitoring. |
+//! | `crypto` | no      | ALICE-Crypto AEAD encryption for bitstreams. |
+//! | `cache`  | no      | ALICE-Cache decoded frame caching. |
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![allow(

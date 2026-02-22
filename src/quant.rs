@@ -46,6 +46,16 @@ use crate::error::CodecError;
 use crate::SubBand3D;
 
 /// Quantizer configuration
+///
+/// # Example
+///
+/// ```
+/// use alice_codec::Quantizer;
+///
+/// let q = Quantizer::new(8);
+/// assert_eq!(q.quantize(20), 2);   // 20 / 8 = 2
+/// assert_eq!(q.dequantize(2), 16); // 2 * 8 = 16
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct Quantizer {
     /// Quantization step size
@@ -358,6 +368,17 @@ impl From<Quantizer> for FastQuantizer {
 ///
 /// Computes optimal quantization step sizes using closed-form solution
 /// assuming Laplacian distribution of wavelet coefficients.
+///
+/// # Example
+///
+/// ```
+/// use alice_codec::{AnalyticalRDO, SubBand3D};
+///
+/// let rdo = AnalyticalRDO::with_quality(80);
+/// let coefficients = vec![10i32, -5, 3, 0, -1, 8, -2, 4];
+/// let quantizer = rdo.compute_quantizer(&coefficients, SubBand3D::LLH);
+/// assert!(quantizer.step >= 1);
+/// ```
 #[derive(Clone, Debug)]
 pub struct AnalyticalRDO {
     /// Target bits per pixel
@@ -593,6 +614,10 @@ mod simd {
     /// # Safety
     ///
     /// Requires AVX2 support.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `output.len() < input.len()`.
     #[target_feature(enable = "avx2")]
     pub unsafe fn quantize_avx2(input: &[i32], output: &mut [i32], step: i32, dead_zone: i32) {
         let n = input.len();

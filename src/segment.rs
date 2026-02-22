@@ -28,6 +28,15 @@ use std::vec::Vec;
 use crate::error::CodecError;
 
 /// Segmentation configuration
+///
+/// # Example
+///
+/// ```
+/// use alice_codec::SegmentConfig;
+///
+/// let config = SegmentConfig::default();
+/// assert_eq!(config.motion_threshold, 25);
+/// ```
 #[derive(Debug, Clone)]
 pub struct SegmentConfig {
     /// Motion threshold for frame difference detection (0-255)
@@ -52,6 +61,18 @@ impl Default for SegmentConfig {
 }
 
 /// Result of person segmentation
+///
+/// # Example
+///
+/// ```
+/// use alice_codec::segment_by_chroma;
+///
+/// let y  = vec![0i16; 8 * 8];
+/// let co = vec![0i16; 8 * 8];
+/// let cg = vec![0i16; 8 * 8];
+/// let result = segment_by_chroma(&y, &co, &cg, 8, 8, 30);
+/// assert!(result.coverage() >= 0.0);
+/// ```
 #[derive(Debug, Clone)]
 pub struct SegmentResult {
     /// Binary mask: 1 = foreground (person), 0 = background
