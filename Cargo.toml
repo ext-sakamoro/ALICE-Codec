@@ -47,12 +47,12 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
-# [dev-dependencies]
-# criterion = "0.5"
-#
-# [[bench]]
-# name = "wavelet"
-# harness = false
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "wavelet"
+harness = false
 
 [profile.bench]
 opt-level = 3
