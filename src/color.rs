@@ -27,6 +27,8 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+use crate::error::CodecError;
+
 /// YCoCg-R pixel (Y, Co, Cg components)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct YCoCgR {
@@ -119,13 +121,24 @@ pub fn ycocg_r_to_rgb_pixel(ycocg: YCoCgR) -> RGB {
 /// * `co_out` - Output Co channel
 /// * `cg_out` - Output Cg channel
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if output buffers are smaller than input.
-pub fn rgb_to_ycocg_r(rgb: &[RGB], y_out: &mut [i16], co_out: &mut [i16], cg_out: &mut [i16]) {
-    assert!(y_out.len() >= rgb.len());
-    assert!(co_out.len() >= rgb.len());
-    assert!(cg_out.len() >= rgb.len());
+/// Returns `CodecError::InvalidBufferSize` if any output buffer is smaller
+/// than the input.
+pub fn rgb_to_ycocg_r(
+    rgb: &[RGB],
+    y_out: &mut [i16],
+    co_out: &mut [i16],
+    cg_out: &mut [i16],
+) -> Result<(), CodecError> {
+    let n = rgb.len();
+    if y_out.len() < n || co_out.len() < n || cg_out.len() < n {
+        let min_out = y_out.len().min(co_out.len()).min(cg_out.len());
+        return Err(CodecError::InvalidBufferSize {
+            expected: n,
+            got: min_out,
+        });
+    }
 
     for (i, &pixel) in rgb.iter().enumerate() {
         let ycocg = rgb_to_ycocg_r_pixel(pixel);
@@ -133,6 +146,7 @@ pub fn rgb_to_ycocg_r(rgb: &[RGB], y_out: &mut [i16], co_out: &mut [i16], cg_out
         co_out[i] = ycocg.co;
         cg_out[i] = ycocg.cg;
     }
+    Ok(())
 }
 
 /// Convert YCoCg-R channels back to RGB
@@ -144,39 +158,65 @@ pub fn rgb_to_ycocg_r(rgb: &[RGB], y_out: &mut [i16], co_out: &mut [i16], cg_out
 /// * `cg` - Cg channel
 /// * `rgb_out` - Output RGB pixels
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if channels have different lengths or output is too small.
-pub fn ycocg_r_to_rgb(y: &[i16], co: &[i16], cg: &[i16], rgb_out: &mut [RGB]) {
-    assert_eq!(y.len(), co.len());
-    assert_eq!(y.len(), cg.len());
-    assert!(rgb_out.len() >= y.len());
+/// Returns `CodecError::InvalidBufferSize` if channels have different lengths
+/// or if `rgb_out` is smaller than the channel length.
+pub fn ycocg_r_to_rgb(
+    y: &[i16],
+    co: &[i16],
+    cg: &[i16],
+    rgb_out: &mut [RGB],
+) -> Result<(), CodecError> {
+    let n = y.len();
+    if co.len() != n || cg.len() != n {
+        return Err(CodecError::InvalidBufferSize {
+            expected: n,
+            got: co.len().min(cg.len()),
+        });
+    }
+    if rgb_out.len() < n {
+        return Err(CodecError::InvalidBufferSize {
+            expected: n,
+            got: rgb_out.len(),
+        });
+    }
 
-    for i in 0..y.len() {
+    for i in 0..n {
         let ycocg = YCoCgR::new(y[i], co[i], cg[i]);
         rgb_out[i] = ycocg_r_to_rgb_pixel(ycocg);
     }
+    Ok(())
 }
 
 /// Convert interleaved RGB bytes to planar YCoCg-R
 ///
-/// Input format: [R0, G0, B0, R1, G1, B1, ...]
+/// Input format: `[R0, G0, B0, R1, G1, B1, ...]`
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `rgb_bytes.len()` is not a multiple of 3, or if any output
-/// buffer is smaller than the number of pixels.
+/// Returns `CodecError::InvalidBufferSize` if `rgb_bytes.len()` is not a
+/// multiple of 3, or if any output buffer is smaller than the pixel count.
 pub fn rgb_bytes_to_ycocg_r(
     rgb_bytes: &[u8],
     y_out: &mut [i16],
     co_out: &mut [i16],
     cg_out: &mut [i16],
-) {
-    assert_eq!(rgb_bytes.len() % 3, 0);
+) -> Result<(), CodecError> {
+    if !rgb_bytes.len().is_multiple_of(3) {
+        return Err(CodecError::InvalidBufferSize {
+            expected: (rgb_bytes.len() / 3 + 1) * 3,
+            got: rgb_bytes.len(),
+        });
+    }
     let n_pixels = rgb_bytes.len() / 3;
-    assert!(y_out.len() >= n_pixels);
-    assert!(co_out.len() >= n_pixels);
-    assert!(cg_out.len() >= n_pixels);
+    if y_out.len() < n_pixels || co_out.len() < n_pixels || cg_out.len() < n_pixels {
+        let min_out = y_out.len().min(co_out.len()).min(cg_out.len());
+        return Err(CodecError::InvalidBufferSize {
+            expected: n_pixels,
+            got: min_out,
+        });
+    }
 
     for i in 0..n_pixels {
         let r = rgb_bytes[i * 3] as i16;
@@ -192,22 +232,38 @@ pub fn rgb_bytes_to_ycocg_r(
         co_out[i] = co;
         cg_out[i] = cg;
     }
+    Ok(())
 }
 
 /// Convert planar YCoCg-R to interleaved RGB bytes
 ///
-/// Output format: [R0, G0, B0, R1, G1, B1, ...]
+/// Output format: `[R0, G0, B0, R1, G1, B1, ...]`
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if channels have different lengths or `rgb_out` is smaller than
-/// `y.len() * 3`.
-pub fn ycocg_r_to_rgb_bytes(y: &[i16], co: &[i16], cg: &[i16], rgb_out: &mut [u8]) {
-    assert_eq!(y.len(), co.len());
-    assert_eq!(y.len(), cg.len());
-    assert!(rgb_out.len() >= y.len() * 3);
+/// Returns `CodecError::InvalidBufferSize` if channels have different lengths
+/// or if `rgb_out` is smaller than `y.len() * 3`.
+pub fn ycocg_r_to_rgb_bytes(
+    y: &[i16],
+    co: &[i16],
+    cg: &[i16],
+    rgb_out: &mut [u8],
+) -> Result<(), CodecError> {
+    let n = y.len();
+    if co.len() != n || cg.len() != n {
+        return Err(CodecError::InvalidBufferSize {
+            expected: n,
+            got: co.len().min(cg.len()),
+        });
+    }
+    if rgb_out.len() < n * 3 {
+        return Err(CodecError::InvalidBufferSize {
+            expected: n * 3,
+            got: rgb_out.len(),
+        });
+    }
 
-    for i in 0..y.len() {
+    for i in 0..n {
         let t = y[i] - (cg[i] >> 1);
         let g = cg[i] + t;
         let b = t - (co[i] >> 1);
@@ -217,6 +273,7 @@ pub fn ycocg_r_to_rgb_bytes(y: &[i16], co: &[i16], cg: &[i16], rgb_out: &mut [u8
         rgb_out[i * 3 + 1] = g.clamp(0, 255) as u8;
         rgb_out[i * 3 + 2] = b.clamp(0, 255) as u8;
     }
+    Ok(())
 }
 
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
@@ -377,7 +434,7 @@ mod tests {
         for rgb in test_cases {
             let ycocg = rgb_to_ycocg_r_pixel(rgb);
             let back = ycocg_r_to_rgb_pixel(ycocg);
-            assert_eq!(rgb, back, "Roundtrip failed for {:?}", rgb);
+            assert_eq!(rgb, back, "Roundtrip failed for {rgb:?}");
         }
     }
 
@@ -390,7 +447,7 @@ mod tests {
                     let rgb = RGB::new(r, g, b);
                     let ycocg = rgb_to_ycocg_r_pixel(rgb);
                     let back = ycocg_r_to_rgb_pixel(ycocg);
-                    assert_eq!(rgb, back, "Roundtrip failed for {:?}", rgb);
+                    assert_eq!(rgb, back, "Roundtrip failed for {rgb:?}");
                 }
             }
         }
@@ -409,8 +466,8 @@ mod tests {
         let mut cg = [0i16; 3];
         let mut rgb_out = [RGB::new(0, 0, 0); 3];
 
-        rgb_to_ycocg_r(&rgb, &mut y, &mut co, &mut cg);
-        ycocg_r_to_rgb(&y, &co, &cg, &mut rgb_out);
+        rgb_to_ycocg_r(&rgb, &mut y, &mut co, &mut cg).unwrap();
+        ycocg_r_to_rgb(&y, &co, &cg, &mut rgb_out).unwrap();
 
         assert_eq!(rgb, rgb_out);
     }
@@ -424,8 +481,8 @@ mod tests {
         let mut cg = [0i16; 3];
         let mut rgb_out = [0u8; 9];
 
-        rgb_bytes_to_ycocg_r(&rgb_bytes, &mut y, &mut co, &mut cg);
-        ycocg_r_to_rgb_bytes(&y, &co, &cg, &mut rgb_out);
+        rgb_bytes_to_ycocg_r(&rgb_bytes, &mut y, &mut co, &mut cg).unwrap();
+        ycocg_r_to_rgb_bytes(&y, &co, &cg, &mut rgb_out).unwrap();
 
         assert_eq!(rgb_bytes, rgb_out);
     }
@@ -444,15 +501,15 @@ mod tests {
 
     #[test]
     fn test_empty_buffer_conversion() {
-        // Zero-length buffers should work without panic
+        // Zero-length buffers should work without error
         let rgb: [RGB; 0] = [];
         let mut y = [];
         let mut co = [];
         let mut cg = [];
         let mut rgb_out: [RGB; 0] = [];
 
-        rgb_to_ycocg_r(&rgb, &mut y, &mut co, &mut cg);
-        ycocg_r_to_rgb(&y, &co, &cg, &mut rgb_out);
+        rgb_to_ycocg_r(&rgb, &mut y, &mut co, &mut cg).unwrap();
+        ycocg_r_to_rgb(&y, &co, &cg, &mut rgb_out).unwrap();
     }
 
     #[test]
@@ -463,8 +520,30 @@ mod tests {
         let mut cg: [i16; 0] = [];
         let mut rgb_out: [u8; 0] = [];
 
-        rgb_bytes_to_ycocg_r(&rgb_bytes, &mut y, &mut co, &mut cg);
-        ycocg_r_to_rgb_bytes(&y, &co, &cg, &mut rgb_out);
+        rgb_bytes_to_ycocg_r(&rgb_bytes, &mut y, &mut co, &mut cg).unwrap();
+        ycocg_r_to_rgb_bytes(&y, &co, &cg, &mut rgb_out).unwrap();
+    }
+
+    #[test]
+    fn test_buffer_size_error() {
+        let rgb = [RGB::new(100, 150, 200); 3];
+        let mut y = [0i16; 2]; // too small
+        let mut co = [0i16; 3];
+        let mut cg = [0i16; 3];
+
+        let result = rgb_to_ycocg_r(&rgb, &mut y, &mut co, &mut cg);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_byte_not_multiple_of_3() {
+        let rgb_bytes = [1u8, 2, 3, 4]; // 4 bytes, not multiple of 3
+        let mut y = [0i16; 2];
+        let mut co = [0i16; 2];
+        let mut cg = [0i16; 2];
+
+        let result = rgb_bytes_to_ycocg_r(&rgb_bytes, &mut y, &mut co, &mut cg);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -503,9 +582,9 @@ mod tests {
         for v in (0..=255).step_by(5) {
             let rgb = RGB::new(v, v, v);
             let ycocg = rgb_to_ycocg_r_pixel(rgb);
-            assert_eq!(ycocg.co, 0, "Co should be 0 for gray level {}", v);
-            assert_eq!(ycocg.cg, 0, "Cg should be 0 for gray level {}", v);
-            assert_eq!(ycocg.y, v as i16, "Y should equal gray level {}", v);
+            assert_eq!(ycocg.co, 0, "Co should be 0 for gray level {v}");
+            assert_eq!(ycocg.cg, 0, "Cg should be 0 for gray level {v}");
+            assert_eq!(ycocg.y, v as i16, "Y should equal gray level {v}");
         }
     }
 }

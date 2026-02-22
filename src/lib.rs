@@ -47,6 +47,7 @@
 extern crate alloc;
 
 pub mod color;
+pub mod error;
 pub mod pipeline;
 pub mod quant;
 pub mod rans;
@@ -70,7 +71,8 @@ pub mod cache_bridge;
 
 // Re-exports
 pub use color::{rgb_to_ycocg_r, ycocg_r_to_rgb};
-pub use pipeline::{CodecError, EncodedChunk, FrameDecoder, FrameEncoder, WaveletType};
+pub use error::CodecError;
+pub use pipeline::{EncodedChunk, FrameDecoder, FrameEncoder, WaveletType};
 pub use quant::{AnalyticalRDO, Quantizer};
 pub use rans::{RansDecoder, RansEncoder, RansState};
 pub use segment::{segment_by_chroma, segment_by_motion, SegmentConfig, SegmentResult};
@@ -173,14 +175,10 @@ mod tests {
         ];
 
         for sb in temporal_high {
-            assert!(sb.is_temporal_high(), "{:?} should be temporal-high", sb);
+            assert!(sb.is_temporal_high(), "{sb:?} should be temporal-high");
         }
         for sb in temporal_low {
-            assert!(
-                !sb.is_temporal_high(),
-                "{:?} should NOT be temporal-high",
-                sb
-            );
+            assert!(!sb.is_temporal_high(), "{sb:?} should NOT be temporal-high");
         }
     }
 
@@ -200,7 +198,7 @@ mod tests {
             if matches!(sb, SubBand3D::LLL) {
                 assert!(sb.is_dc());
             } else {
-                assert!(!sb.is_dc(), "{:?} should not be DC", sb);
+                assert!(!sb.is_dc(), "{sb:?} should not be DC");
             }
         }
     }

@@ -25,6 +25,8 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::vec::Vec;
 
+use crate::error::CodecError;
+
 /// Segmentation configuration
 #[derive(Debug, Clone)]
 pub struct SegmentConfig {
@@ -140,20 +142,30 @@ impl SegmentResult {
 /// - Morphology: Separable distance scan O(n) instead of O(n x r^2)
 /// - `BBox`: Row-scan with `position()`/`rposition()`
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `current` or `reference` is shorter than `width * height`.
-#[must_use]
+/// Returns `CodecError::InvalidBufferSize` if `current` or `reference` is
+/// shorter than `width * height`.
 pub fn segment_by_motion(
     current: &[u8],
     reference: &[u8],
     width: u32,
     height: u32,
     config: &SegmentConfig,
-) -> SegmentResult {
+) -> Result<SegmentResult, CodecError> {
     let total = (width * height) as usize;
-    assert!(current.len() >= total);
-    assert!(reference.len() >= total);
+    if current.len() < total {
+        return Err(CodecError::InvalidBufferSize {
+            expected: total,
+            got: current.len(),
+        });
+    }
+    if reference.len() < total {
+        return Err(CodecError::InvalidBufferSize {
+            expected: total,
+            got: reference.len(),
+        });
+    }
     let threshold = config.motion_threshold;
 
     // ─── Step 1: Branchless frame difference ───
@@ -185,13 +197,13 @@ pub fn segment_by_motion(
     // ─── Step 3: Row-scan bounding box ───
     let (bbox, fg_count) = compute_bbox_fast(&mask, w, h);
 
-    SegmentResult {
+    Ok(SegmentResult {
         mask,
         bbox,
         foreground_count: fg_count,
         width,
         height,
-    }
+    })
 }
 
 /// YCoCg-R chroma-key segmentation (for green screen setups).
@@ -428,7 +440,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = segment_by_motion(&current, &reference, width, height, &config);
+        let result = segment_by_motion(&current, &reference, width, height, &config).unwrap();
         assert!(result.foreground_count > 0);
         assert!(result.foreground_count <= 40);
         assert!(result.coverage() > 0.0);
@@ -454,7 +466,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = segment_by_motion(&current, &reference, width, height, &config);
+        let result = segment_by_motion(&current, &reference, width, height, &config).unwrap();
         assert!(result.foreground_count > 0);
         // Dilate expands, erode shrinks — net result should be close to original
         let coverage = result.coverage();
@@ -466,8 +478,8 @@ mod tests {
         let width = 10u32;
         let height = 4u32;
         let mut mask = vec![0u8; 40];
-        for i in 10..30 {
-            mask[i] = 1;
+        for v in &mut mask[10..30] {
+            *v = 1;
         }
 
         let result = SegmentResult {
@@ -517,7 +529,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = segment_by_motion(&current, &reference, 10, 10, &config);
+        let result = segment_by_motion(&current, &reference, 10, 10, &config).unwrap();
         assert_eq!(result.foreground_count, 0);
         assert_eq!(result.bbox, [0, 0, 0, 0]);
     }
@@ -624,7 +636,7 @@ mod tests {
             width: 0,
             height: 0,
         };
-        assert_eq!(result.coverage(), 0.0);
+        assert!(result.coverage().abs() < f32::EPSILON);
     }
 
     #[test]
@@ -641,7 +653,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = segment_by_motion(&current, &reference, width, height, &config);
+        let result = segment_by_motion(&current, &reference, width, height, &config).unwrap();
         assert_eq!(result.foreground_count, 64);
         assert!((result.coverage() - 1.0).abs() < f32::EPSILON);
     }

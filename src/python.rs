@@ -110,6 +110,7 @@ fn segment_motion_numpy<'py>(
             ..Default::default()
         };
         segment_by_motion(curr, ref_, w as u32, h as u32, &config)
+            .expect("pre-validated buffer sizes")
     });
 
     // Zero-copy output: mask → NumPy array
@@ -515,7 +516,8 @@ fn rgb_to_ycocg_r_numpy<'py>(
         let mut y_out = vec![0i16; n_pixels];
         let mut co_out = vec![0i16; n_pixels];
         let mut cg_out = vec![0i16; n_pixels];
-        rgb_bytes_to_ycocg_r(data, &mut y_out, &mut co_out, &mut cg_out);
+        rgb_bytes_to_ycocg_r(data, &mut y_out, &mut co_out, &mut cg_out)
+            .expect("pre-validated buffer sizes");
         (y_out, co_out, cg_out)
     });
 
@@ -568,7 +570,8 @@ fn ycocg_r_to_rgb_numpy<'py>(
         let co_data = unsafe { co_send.as_slice() };
         let cg_data = unsafe { cg_send.as_slice() };
         let mut out = vec![0u8; y_data.len() * 3];
-        ycocg_r_to_rgb_bytes(y_data, co_data, cg_data, &mut out);
+        ycocg_r_to_rgb_bytes(y_data, co_data, cg_data, &mut out)
+            .expect("pre-validated buffer sizes");
         out
     });
 

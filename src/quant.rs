@@ -42,6 +42,7 @@
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+use crate::error::CodecError;
 use crate::SubBand3D;
 
 /// Quantizer configuration
@@ -103,26 +104,38 @@ impl Quantizer {
 
     /// Quantize buffer in-place (DPS style)
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `output` is smaller than `input`.
-    pub fn quantize_buffer(&self, input: &[i32], output: &mut [i32]) {
-        assert!(output.len() >= input.len());
+    /// Returns `CodecError::InvalidBufferSize` if `output` is smaller than `input`.
+    pub fn quantize_buffer(&self, input: &[i32], output: &mut [i32]) -> Result<(), CodecError> {
+        if output.len() < input.len() {
+            return Err(CodecError::InvalidBufferSize {
+                expected: input.len(),
+                got: output.len(),
+            });
+        }
         for (i, &val) in input.iter().enumerate() {
             output[i] = self.quantize(val);
         }
+        Ok(())
     }
 
     /// Dequantize buffer in-place (DPS style)
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `output` is smaller than `input`.
-    pub fn dequantize_buffer(&self, input: &[i32], output: &mut [i32]) {
-        assert!(output.len() >= input.len());
+    /// Returns `CodecError::InvalidBufferSize` if `output` is smaller than `input`.
+    pub fn dequantize_buffer(&self, input: &[i32], output: &mut [i32]) -> Result<(), CodecError> {
+        if output.len() < input.len() {
+            return Err(CodecError::InvalidBufferSize {
+                expected: input.len(),
+                got: output.len(),
+            });
+        }
         for (i, &val) in input.iter().enumerate() {
             output[i] = self.dequantize(val);
         }
+        Ok(())
     }
 }
 
@@ -164,12 +177,16 @@ impl FastQuantizer {
     ///
     /// Precomputes magic number for division.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `step` is not positive.
-    #[must_use]
-    pub fn new(step: i32) -> Self {
-        assert!(step > 0, "step must be positive");
+    /// Returns `CodecError::InvalidDimensions` if `step` is not positive.
+    pub fn new(step: i32) -> Result<Self, CodecError> {
+        if step <= 0 {
+            return Err(CodecError::InvalidDimensions {
+                width: step as u32,
+                height: 0,
+            });
+        }
 
         // Compute magic number for unsigned division by step
         // We want: (x * reciprocal) >> shift ≈ x / step
@@ -187,20 +204,23 @@ impl FastQuantizer {
         let power: u128 = 1u128 << shift;
         let reciprocal = power.div_ceil(step_u as u128) as u64;
 
-        Self {
+        Ok(Self {
             reciprocal,
             shift,
             step,
             dead_zone: step, // Default dead-zone = step
-        }
+        })
     }
 
     /// Create fast quantizer with custom dead-zone
-    #[must_use]
-    pub fn with_dead_zone(step: i32, dead_zone: i32) -> Self {
-        let mut q = Self::new(step);
+    ///
+    /// # Errors
+    ///
+    /// Returns error if `step` is not positive.
+    pub fn with_dead_zone(step: i32, dead_zone: i32) -> Result<Self, CodecError> {
+        let mut q = Self::new(step)?;
         q.dead_zone = dead_zone;
-        q
+        Ok(q)
     }
 
     /// Fast division: x / step using precomputed magic number
@@ -252,26 +272,38 @@ impl FastQuantizer {
 
     /// Quantize buffer (DPS style)
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `output` is smaller than `input`.
-    pub fn quantize_buffer(&self, input: &[i32], output: &mut [i32]) {
-        assert!(output.len() >= input.len());
+    /// Returns `CodecError::InvalidBufferSize` if `output` is smaller than `input`.
+    pub fn quantize_buffer(&self, input: &[i32], output: &mut [i32]) -> Result<(), CodecError> {
+        if output.len() < input.len() {
+            return Err(CodecError::InvalidBufferSize {
+                expected: input.len(),
+                got: output.len(),
+            });
+        }
         for (i, &val) in input.iter().enumerate() {
             output[i] = self.quantize(val);
         }
+        Ok(())
     }
 
     /// Dequantize buffer (DPS style)
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `output` is smaller than `input`.
-    pub fn dequantize_buffer(&self, input: &[i32], output: &mut [i32]) {
-        assert!(output.len() >= input.len());
+    /// Returns `CodecError::InvalidBufferSize` if `output` is smaller than `input`.
+    pub fn dequantize_buffer(&self, input: &[i32], output: &mut [i32]) -> Result<(), CodecError> {
+        if output.len() < input.len() {
+            return Err(CodecError::InvalidBufferSize {
+                expected: input.len(),
+                got: output.len(),
+            });
+        }
         for (i, &val) in input.iter().enumerate() {
             output[i] = self.dequantize(val);
         }
+        Ok(())
     }
 
     /// Quantize buffer using AVX2 SIMD (8 coefficients at a time)
@@ -291,7 +323,7 @@ impl FastQuantizer {
         }
         #[cfg(not(all(target_arch = "x86_64", feature = "simd")))]
         {
-            self.quantize_buffer(input, output);
+            let _ = self.quantize_buffer(input, output);
         }
     }
 
@@ -312,13 +344,13 @@ impl FastQuantizer {
 
 impl Default for FastQuantizer {
     fn default() -> Self {
-        Self::new(16)
+        Self::new(16).expect("step=16 is always valid")
     }
 }
 
 impl From<Quantizer> for FastQuantizer {
     fn from(q: Quantizer) -> Self {
-        Self::with_dead_zone(q.step, q.dead_zone)
+        Self::with_dead_zone(q.step, q.dead_zone).expect("Quantizer step is always positive")
     }
 }
 
@@ -463,13 +495,29 @@ impl Default for AnalyticalRDO {
 }
 
 /// Quantize sub-band coefficients
-pub fn quantize_subband(coeffs: &[i32], quantizer: &Quantizer, output: &mut [i32]) {
-    quantizer.quantize_buffer(coeffs, output);
+///
+/// # Errors
+///
+/// Returns error if `output` is smaller than `coeffs`.
+pub fn quantize_subband(
+    coeffs: &[i32],
+    quantizer: &Quantizer,
+    output: &mut [i32],
+) -> Result<(), CodecError> {
+    quantizer.quantize_buffer(coeffs, output)
 }
 
 /// Dequantize sub-band coefficients
-pub fn dequantize_subband(coeffs: &[i32], quantizer: &Quantizer, output: &mut [i32]) {
-    quantizer.dequantize_buffer(coeffs, output);
+///
+/// # Errors
+///
+/// Returns error if `output` is smaller than `coeffs`.
+pub fn dequantize_subband(
+    coeffs: &[i32],
+    quantizer: &Quantizer,
+    output: &mut [i32],
+) -> Result<(), CodecError> {
+    quantizer.dequantize_buffer(coeffs, output)
 }
 
 /// Convert quantized coefficients to symbols for entropy coding
@@ -477,11 +525,16 @@ pub fn dequantize_subband(coeffs: &[i32], quantizer: &Quantizer, output: &mut [i
 /// Maps signed integers to unsigned symbols:
 /// 0 -> 0, 1 -> 1, -1 -> 2, 2 -> 3, -2 -> 4, ...
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `symbols` is smaller than `coeffs`.
-pub fn to_symbols(coeffs: &[i32], symbols: &mut [u8]) {
-    assert!(symbols.len() >= coeffs.len());
+/// Returns `CodecError::InvalidBufferSize` if `symbols` is smaller than `coeffs`.
+pub fn to_symbols(coeffs: &[i32], symbols: &mut [u8]) -> Result<(), CodecError> {
+    if symbols.len() < coeffs.len() {
+        return Err(CodecError::InvalidBufferSize {
+            expected: coeffs.len(),
+            got: symbols.len(),
+        });
+    }
 
     for (i, &coeff) in coeffs.iter().enumerate() {
         symbols[i] = match coeff.cmp(&0) {
@@ -490,17 +543,23 @@ pub fn to_symbols(coeffs: &[i32], symbols: &mut [u8]) {
             core::cmp::Ordering::Less => (-coeff * 2) as u8,
         };
     }
+    Ok(())
 }
 
 /// Convert symbols back to quantized coefficients
 ///
 /// Inverse of `to_symbols`.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `coeffs` is smaller than `symbols`.
-pub fn from_symbols(symbols: &[u8], coeffs: &mut [i32]) {
-    assert!(coeffs.len() >= symbols.len());
+/// Returns `CodecError::InvalidBufferSize` if `coeffs` is smaller than `symbols`.
+pub fn from_symbols(symbols: &[u8], coeffs: &mut [i32]) -> Result<(), CodecError> {
+    if coeffs.len() < symbols.len() {
+        return Err(CodecError::InvalidBufferSize {
+            expected: symbols.len(),
+            got: coeffs.len(),
+        });
+    }
 
     for (i, &sym) in symbols.iter().enumerate() {
         coeffs[i] = if sym == 0 {
@@ -511,6 +570,7 @@ pub fn from_symbols(symbols: &[u8], coeffs: &mut [i32]) {
             -(sym as i32 / 2)
         };
     }
+    Ok(())
 }
 
 /// Build histogram of symbols for entropy coding
@@ -627,21 +687,14 @@ mod tests {
             // For values outside dead-zone, error should be bounded
             // For values in dead-zone, they map to 0
             if value.abs() < quantizer.dead_zone {
-                assert_eq!(
-                    dequant, 0,
-                    "Dead-zone value {} should dequantize to 0",
-                    value
-                );
+                assert_eq!(dequant, 0, "Dead-zone value {value} should dequantize to 0");
             } else {
                 // Error can be up to step + dead_zone for boundary cases
                 let max_error = quantizer.step + quantizer.dead_zone;
                 let error = (dequant - value).abs();
                 assert!(
                     error <= max_error,
-                    "Error {} too large for value {} (max {})",
-                    error,
-                    value,
-                    max_error
+                    "Error {error} too large for value {value} (max {max_error})"
                 );
             }
         }
@@ -654,7 +707,7 @@ mod tests {
         // Values in dead zone should map to 0
         for value in -15..=15 {
             let qval = quantizer.quantize(value);
-            assert_eq!(qval, 0, "Value {} should be in dead zone", value);
+            assert_eq!(qval, 0, "Value {value} should be in dead zone");
         }
     }
 
@@ -665,12 +718,12 @@ mod tests {
         let mut symbols = [0u8; 7];
         let mut recovered = [0i32; 7];
 
-        to_symbols(&original, &mut symbols);
-        from_symbols(&symbols, &mut recovered);
+        to_symbols(&original, &mut symbols).unwrap();
+        from_symbols(&symbols, &mut recovered).unwrap();
 
         // Values should be recoverable for small integers
         for (i, (&orig, &rec)) in original.iter().zip(recovered.iter()).enumerate() {
-            assert_eq!(orig, rec, "Mismatch at index {}: {} != {}", i, orig, rec);
+            assert_eq!(orig, rec, "Mismatch at index {i}: {orig} != {rec}");
         }
     }
 
@@ -681,7 +734,7 @@ mod tests {
         let expected = [0u8, 1, 2, 3, 4, 5, 6];
         let mut symbols = [0u8; 7];
 
-        to_symbols(&values, &mut symbols);
+        to_symbols(&values, &mut symbols).unwrap();
 
         assert_eq!(symbols, expected);
     }
@@ -741,8 +794,10 @@ mod tests {
         let mut quantized = [0i32; 5];
         let mut dequantized = [0i32; 5];
 
-        quantizer.quantize_buffer(&input, &mut quantized);
-        quantizer.dequantize_buffer(&quantized, &mut dequantized);
+        quantizer.quantize_buffer(&input, &mut quantized).unwrap();
+        quantizer
+            .dequantize_buffer(&quantized, &mut dequantized)
+            .unwrap();
 
         // Check that quantization happened
         // Values in dead-zone should become 0
@@ -755,10 +810,7 @@ mod tests {
             let error = (orig - rec).abs();
             assert!(
                 error <= max_error,
-                "Error {} at index {} too large (max {})",
-                error,
-                i,
-                max_error
+                "Error {error} at index {i} too large (max {max_error})"
             );
         }
     }
@@ -772,7 +824,7 @@ mod tests {
         // FastQuantizer should produce identical results to Quantizer
         for step in [4, 8, 16, 32, 64, 128] {
             let regular = Quantizer::new(step);
-            let fast = FastQuantizer::new(step);
+            let fast = FastQuantizer::new(step).unwrap();
 
             for value in [-1000, -500, -100, -50, 0, 50, 100, 500, 1000] {
                 let q_regular = regular.quantize(value);
@@ -780,8 +832,7 @@ mod tests {
 
                 assert_eq!(
                     q_regular, q_fast,
-                    "Mismatch for step={}, value={}: regular={}, fast={}",
-                    step, value, q_regular, q_fast
+                    "Mismatch for step={step}, value={value}: regular={q_regular}, fast={q_fast}"
                 );
             }
         }
@@ -789,44 +840,42 @@ mod tests {
 
     #[test]
     fn test_fast_quantizer_dead_zone() {
-        let fast = FastQuantizer::new(16);
+        let fast = FastQuantizer::new(16).unwrap();
 
         // Values in dead zone should map to 0
         for value in -15..=15 {
             let qval = fast.quantize(value);
-            assert_eq!(qval, 0, "Value {} should be in dead zone", value);
+            assert_eq!(qval, 0, "Value {value} should be in dead zone");
         }
     }
 
     #[test]
     fn test_fast_quantizer_large_values() {
         // Test with larger values to ensure magic number works
-        let fast = FastQuantizer::new(17); // Prime number to stress test
+        let fast = FastQuantizer::new(17).unwrap(); // Prime number to stress test
 
-        for value in [1000, 5000, 10000, 50000, 100000] {
+        for value in [1000, 5000, 10_000, 50_000, 100_000] {
             let q = fast.quantize(value);
             let expected = (value - 17 / 2) / 17;
 
             // Allow ±1 tolerance due to rounding differences
             assert!(
                 (q - expected).abs() <= 1,
-                "Large value {}: got {}, expected ~{}",
-                value,
-                q,
-                expected
+                "Large value {value}: got {q}, expected ~{expected}"
             );
         }
     }
 
     #[test]
     fn test_fast_quantizer_roundtrip() {
-        let fast = FastQuantizer::new(16);
+        let fast = FastQuantizer::new(16).unwrap();
         let input = [-100, -50, 0, 50, 100];
         let mut quantized = [0i32; 5];
         let mut dequantized = [0i32; 5];
 
-        fast.quantize_buffer(&input, &mut quantized);
-        fast.dequantize_buffer(&quantized, &mut dequantized);
+        fast.quantize_buffer(&input, &mut quantized).unwrap();
+        fast.dequantize_buffer(&quantized, &mut dequantized)
+            .unwrap();
 
         // Check consistency
         assert_eq!(dequantized[2], 0, "Zero should stay zero");
@@ -836,10 +885,7 @@ mod tests {
             let error = (orig - rec).abs();
             assert!(
                 error <= max_error,
-                "Error {} at index {} too large (max {})",
-                error,
-                i,
-                max_error
+                "Error {error} at index {i} too large (max {max_error})"
             );
         }
     }
@@ -857,8 +903,7 @@ mod tests {
             assert_eq!(
                 regular.quantize(value),
                 fast.quantize(value),
-                "Mismatch for value {}",
-                value
+                "Mismatch for value {value}"
             );
         }
     }
@@ -879,8 +924,7 @@ mod tests {
             let qn = q.quantize(-v);
             assert_eq!(
                 qp, -qn,
-                "Sign symmetry broken for value {}: +={}, -={}",
-                v, qp, qn
+                "Sign symmetry broken for value {v}: +={qp}, -={qn}"
             );
         }
     }
@@ -901,14 +945,13 @@ mod tests {
 
     #[test]
     fn test_fast_quantizer_sign_symmetry() {
-        let fq = FastQuantizer::new(10);
+        let fq = FastQuantizer::new(10).unwrap();
         for v in [20, 50, 100, 500] {
             let qp = fq.quantize(v);
             let qn = fq.quantize(-v);
             assert_eq!(
                 qp, -qn,
-                "FastQuantizer sign symmetry broken for {}: +={}, -={}",
-                v, qp, qn
+                "FastQuantizer sign symmetry broken for {v}: +={qp}, -={qn}"
             );
         }
     }
@@ -919,10 +962,10 @@ mod tests {
         let mut symbols = [0u8; 1];
         let mut recovered = [0i32; 1];
 
-        to_symbols(&coeffs, &mut symbols);
+        to_symbols(&coeffs, &mut symbols).unwrap();
         assert_eq!(symbols[0], 0);
 
-        from_symbols(&symbols, &mut recovered);
+        from_symbols(&symbols, &mut recovered).unwrap();
         assert_eq!(recovered[0], 0);
     }
 
@@ -1004,7 +1047,7 @@ mod tests {
         let q = Quantizer::new(8);
         let input = [0, 4, -4, 16, -16, 100, -100];
         let mut output = [0i32; 7];
-        quantize_subband(&input, &q, &mut output);
+        quantize_subband(&input, &q, &mut output).unwrap();
 
         // Values in dead-zone (|v| < 8) should be 0
         assert_eq!(output[0], 0);
@@ -1021,7 +1064,7 @@ mod tests {
         let q = Quantizer::new(8);
         let input = [0, 1, -1, 5, -5];
         let mut output = [0i32; 5];
-        dequantize_subband(&input, &q, &mut output);
+        dequantize_subband(&input, &q, &mut output).unwrap();
         assert_eq!(output[0], 0);
         assert_eq!(output[1], 8);
         assert_eq!(output[2], -8);
@@ -1033,12 +1076,12 @@ mod tests {
     fn test_fast_quantizer_simd_fallback() {
         // quantize_buffer_simd should produce same results as quantize_buffer
         // on non-SIMD path (default features)
-        let fq = FastQuantizer::new(16);
+        let fq = FastQuantizer::new(16).unwrap();
         let input: Vec<i32> = (-100..=100).collect();
         let mut out_scalar = vec![0i32; input.len()];
         let mut out_simd = vec![0i32; input.len()];
 
-        fq.quantize_buffer(&input, &mut out_scalar);
+        fq.quantize_buffer(&input, &mut out_scalar).unwrap();
         fq.quantize_buffer_simd(&input, &mut out_simd);
 
         assert_eq!(out_scalar, out_simd);

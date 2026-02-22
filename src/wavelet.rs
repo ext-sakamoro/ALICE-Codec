@@ -461,13 +461,7 @@ mod tests {
 
         // Should be identical (Haar is perfectly reversible with integers)
         for (i, (&orig, &rec)) in original.iter().zip(signal.iter()).enumerate() {
-            assert!(
-                (orig - rec).abs() <= 1,
-                "Mismatch at {}: {} vs {}",
-                i,
-                orig,
-                rec
-            );
+            assert!((orig - rec).abs() <= 1, "Mismatch at {i}: {orig} vs {rec}");
         }
     }
 
@@ -481,13 +475,7 @@ mod tests {
         wavelet.inverse(&mut signal);
 
         for (i, (&orig, &rec)) in original.iter().zip(signal.iter()).enumerate() {
-            assert!(
-                (orig - rec).abs() <= 1,
-                "Mismatch at {}: {} vs {}",
-                i,
-                orig,
-                rec
-            );
+            assert!((orig - rec).abs() <= 1, "Mismatch at {i}: {orig} vs {rec}");
         }
     }
 
@@ -502,13 +490,7 @@ mod tests {
 
         // CDF 9/7 with integer approximation has small error
         for (i, (&orig, &rec)) in original.iter().zip(signal.iter()).enumerate() {
-            assert!(
-                (orig - rec).abs() <= 2,
-                "Mismatch at {}: {} vs {}",
-                i,
-                orig,
-                rec
-            );
+            assert!((orig - rec).abs() <= 2, "Mismatch at {i}: {orig} vs {rec}");
         }
     }
 
@@ -524,13 +506,7 @@ mod tests {
         wavelet.inverse(&mut image, 4, 4);
 
         for (i, (&orig, &rec)) in original.iter().zip(image.iter()).enumerate() {
-            assert!(
-                (orig - rec).abs() <= 2,
-                "Mismatch at {}: {} vs {}",
-                i,
-                orig,
-                rec
-            );
+            assert!((orig - rec).abs() <= 2, "Mismatch at {i}: {orig} vs {rec}");
         }
     }
 
@@ -539,20 +515,14 @@ mod tests {
         let wavelet = Wavelet3D::cdf53();
 
         // 4x4 image, 4 frames
-        let original: Vec<i32> = (0..64).map(|i| (i * 3 + 10) as i32).collect();
+        let original: Vec<i32> = (0..64).map(|i| i * 3 + 10).collect();
         let mut volume = original.clone();
 
         wavelet.forward(&mut volume, 4, 4, 4);
         wavelet.inverse(&mut volume, 4, 4, 4);
 
         for (i, (&orig, &rec)) in original.iter().zip(volume.iter()).enumerate() {
-            assert!(
-                (orig - rec).abs() <= 3,
-                "Mismatch at {}: {} vs {}",
-                i,
-                orig,
-                rec
-            );
+            assert!((orig - rec).abs() <= 3, "Mismatch at {i}: {orig} vs {rec}");
         }
     }
 
@@ -562,7 +532,7 @@ mod tests {
         let wavelet = Wavelet3D::cdf53();
 
         // Use varying content to see energy compaction
-        let mut volume: Vec<i32> = (0..64).map(|i| 100 + (i % 4) as i32).collect();
+        let mut volume: Vec<i32> = (0..64).map(|i| 100 + (i % 4)).collect();
         let original = volume.clone();
 
         wavelet.forward(&mut volume, 4, 4, 4);
@@ -576,9 +546,7 @@ mod tests {
         // LLL should have significant energy (at least 10% for this test pattern)
         assert!(
             lll_energy > 0,
-            "Energy compaction failed: LLL={}, Total={}",
-            lll_energy,
-            total_energy
+            "Energy compaction failed: LLL={lll_energy}, Total={total_energy}"
         );
 
         // More importantly: roundtrip should work
@@ -586,10 +554,7 @@ mod tests {
         for (i, (&orig, &rec)) in original.iter().zip(volume.iter()).enumerate() {
             assert!(
                 (orig - rec).abs() <= 3,
-                "Roundtrip failed at {}: {} vs {}",
-                i,
-                orig,
-                rec
+                "Roundtrip failed at {i}: {orig} vs {rec}"
             );
         }
     }
@@ -614,7 +579,7 @@ mod tests {
         // After forward, the signal should be transformed (not identical to input)
         wavelet.inverse(&mut signal);
         for (i, (&o, &r)) in original.iter().zip(signal.iter()).enumerate() {
-            assert!((o - r).abs() <= 1, "Mismatch at {}: {} vs {}", i, o, r);
+            assert!((o - r).abs() <= 1, "Mismatch at {i}: {o} vs {r}");
         }
     }
 
@@ -630,20 +595,13 @@ mod tests {
         for &hp in &signal[4..] {
             assert!(
                 hp.abs() <= 1,
-                "High-pass should be near-zero for constant signal, got {}",
-                hp
+                "High-pass should be near-zero for constant signal, got {hp}"
             );
         }
 
         wavelet.inverse(&mut signal);
         for (i, (&o, &r)) in original.iter().zip(signal.iter()).enumerate() {
-            assert!(
-                (o - r).abs() <= 1,
-                "Roundtrip mismatch at {}: {} vs {}",
-                i,
-                o,
-                r
-            );
+            assert!((o - r).abs() <= 1, "Roundtrip mismatch at {i}: {o} vs {r}");
         }
     }
 
@@ -658,10 +616,7 @@ mod tests {
         for (i, (&o, &r)) in original.iter().zip(image.iter()).enumerate() {
             assert!(
                 (o - r).abs() <= 2,
-                "2x2 roundtrip mismatch at {}: {} vs {}",
-                i,
-                o,
-                r
+                "2x2 roundtrip mismatch at {i}: {o} vs {r}"
             );
         }
     }
@@ -676,13 +631,7 @@ mod tests {
         wavelet.forward(&mut image, 4, 4);
         wavelet.inverse(&mut image, 4, 4);
         for (i, (&o, &r)) in original.iter().zip(image.iter()).enumerate() {
-            assert!(
-                (o - r).abs() <= 3,
-                "CDF97 2D mismatch at {}: {} vs {}",
-                i,
-                o,
-                r
-            );
+            assert!((o - r).abs() <= 3, "CDF97 2D mismatch at {i}: {o} vs {r}");
         }
     }
 
@@ -695,13 +644,7 @@ mod tests {
         wavelet.forward(&mut volume, 2, 2, 2);
         wavelet.inverse(&mut volume, 2, 2, 2);
         for (i, (&o, &r)) in original.iter().zip(volume.iter()).enumerate() {
-            assert!(
-                (o - r).abs() <= 3,
-                "3D depth=2 mismatch at {}: {} vs {}",
-                i,
-                o,
-                r
-            );
+            assert!((o - r).abs() <= 3, "3D depth=2 mismatch at {i}: {o} vs {r}");
         }
     }
 }

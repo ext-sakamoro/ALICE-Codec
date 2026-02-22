@@ -18,9 +18,8 @@ use alloc::vec;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use core::fmt;
-
 use crate::color::{rgb_bytes_to_ycocg_r, ycocg_r_to_rgb_bytes};
+use crate::error::CodecError;
 use crate::quant::{build_histogram, from_symbols, to_symbols, Quantizer};
 use crate::rans::{FrequencyTable, RansDecoder, RansEncoder};
 use crate::wavelet::{Wavelet1D, Wavelet3D};
@@ -59,39 +58,6 @@ impl WaveletType {
         }
     }
 }
-
-// ── Error type ─────────────────────────────────────────────────
-
-/// Errors that can occur during encoding or decoding.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CodecError {
-    /// Input buffer size does not match the declared dimensions.
-    InvalidBufferSize { expected: usize, got: usize },
-    /// Width or height is zero.
-    InvalidDimensions { width: u32, height: u32 },
-    /// Dimensions overflow `usize` when multiplied together.
-    DimensionOverflow,
-    /// The compressed bitstream is malformed or truncated.
-    InvalidBitstream(String),
-}
-
-impl fmt::Display for CodecError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidBufferSize { expected, got } => {
-                write!(f, "buffer size mismatch: expected {expected}, got {got}")
-            }
-            Self::InvalidDimensions { width, height } => {
-                write!(f, "invalid dimensions: {width}x{height}")
-            }
-            Self::DimensionOverflow => write!(f, "dimensions overflow usize"),
-            Self::InvalidBitstream(msg) => write!(f, "invalid bitstream: {msg}"),
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for CodecError {}
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -435,7 +401,7 @@ impl FrameEncoder {
         let mut co_i16 = vec![0i16; n_pixels];
         let mut cg_i16 = vec![0i16; n_pixels];
 
-        rgb_bytes_to_ycocg_r(rgb_frames, &mut y_i16, &mut co_i16, &mut cg_i16);
+        rgb_bytes_to_ycocg_r(rgb_frames, &mut y_i16, &mut co_i16, &mut cg_i16)?;
 
         // --- 2. Pad dimensions to even lengths ---
         let padded_frames = if f == 1 { 2 } else { f + (f & 1) };
@@ -474,11 +440,11 @@ impl FrameEncoder {
 
             // Quantize
             let mut qbuf = vec![0i32; padded_pixels];
-            quantizer.quantize_buffer(&buf, &mut qbuf);
+            quantizer.quantize_buffer(&buf, &mut qbuf)?;
 
             // Signed -> unsigned symbol mapping (zigzag)
             let mut symbols = vec![0u8; padded_pixels];
-            to_symbols(&qbuf, &mut symbols);
+            to_symbols(&qbuf, &mut symbols)?;
 
             // Build histogram and frequency table
             let histogram = build_histogram(&symbols);
@@ -588,12 +554,12 @@ impl FrameDecoder {
 
             // Symbols -> signed coefficients (zigzag inverse)
             let mut qbuf = vec![0i32; padded_pixels];
-            from_symbols(&symbols, &mut qbuf);
+            from_symbols(&symbols, &mut qbuf)?;
 
             // Dequantize
             let quantizer = Quantizer::with_dead_zone(ch_hdr.quant_step, ch_hdr.quant_dead_zone);
             let mut buf = vec![0i32; padded_pixels];
-            quantizer.dequantize_buffer(&qbuf, &mut buf);
+            quantizer.dequantize_buffer(&qbuf, &mut buf)?;
 
             // Inverse 3-D wavelet transform
             let w3d = Wavelet3D::new(w1d.clone());
@@ -619,7 +585,7 @@ impl FrameDecoder {
             &channel_i16[1],
             &channel_i16[2],
             &mut rgb_out,
-        );
+        )?;
 
         Ok(rgb_out)
     }
