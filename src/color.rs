@@ -72,7 +72,7 @@ impl YCoCgR {
 /// ```
 #[must_use]
 #[inline]
-pub fn rgb_to_ycocg_r_pixel(rgb: RGB) -> YCoCgR {
+pub const fn rgb_to_ycocg_r_pixel(rgb: RGB) -> YCoCgR {
     let r = rgb.r as i16;
     let g = rgb.g as i16;
     let b = rgb.b as i16;
@@ -581,6 +581,30 @@ mod tests {
         assert_eq!(back, rgb);
         // Blue: Co = R - B = -255 (negative)
         assert!(ycocg.co < 0, "Co should be negative for pure blue");
+    }
+
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn rgb_roundtrip(r in 0u8..=255, g in 0u8..=255, b in 0u8..=255) {
+                let rgb = RGB::new(r, g, b);
+                let ycocg = rgb_to_ycocg_r_pixel(rgb);
+                let back = ycocg_r_to_rgb_pixel(ycocg);
+                prop_assert_eq!(rgb, back);
+            }
+
+            #[test]
+            fn grayscale_co_cg_zero(v in 0u8..=255) {
+                let rgb = RGB::new(v, v, v);
+                let ycocg = rgb_to_ycocg_r_pixel(rgb);
+                prop_assert_eq!(ycocg.co, 0);
+                prop_assert_eq!(ycocg.cg, 0);
+                prop_assert_eq!(ycocg.y, v as i16);
+            }
+        }
     }
 
     #[test]

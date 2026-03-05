@@ -37,6 +37,8 @@ pub extern "C" fn alice_codec_wavelet1d_cdf97() -> *mut Wavelet1D {
 #[no_mangle]
 pub unsafe extern "C" fn alice_codec_wavelet1d_destroy(ptr: *mut Wavelet1D) {
     if !ptr.is_null() {
+        // SAFETY: ptr was created by Box::into_raw in alice_codec_wavelet1d_*
+        // and the caller guarantees it has not been freed yet.
         drop(Box::from_raw(ptr));
     }
 }
@@ -55,7 +57,9 @@ pub unsafe extern "C" fn alice_codec_wavelet1d_forward(
     if wavelet.is_null() || data.is_null() || len < 2 {
         return;
     }
+    // SAFETY: wavelet is non-null and valid per caller contract.
     let w = &*wavelet;
+    // SAFETY: data is non-null and points to `len` contiguous i32 values per caller contract.
     let signal = slice::from_raw_parts_mut(data, len as usize);
     w.forward(signal);
 }
@@ -74,7 +78,9 @@ pub unsafe extern "C" fn alice_codec_wavelet1d_inverse(
     if wavelet.is_null() || data.is_null() || len < 2 {
         return;
     }
+    // SAFETY: wavelet is non-null and valid per caller contract.
     let w = &*wavelet;
+    // SAFETY: data is non-null and points to `len` contiguous i32 values per caller contract.
     let signal = slice::from_raw_parts_mut(data, len as usize);
     w.inverse(signal);
 }
@@ -95,6 +101,7 @@ pub extern "C" fn alice_codec_encoder_create(quality: u8) -> *mut FrameEncoder {
 #[no_mangle]
 pub unsafe extern "C" fn alice_codec_encoder_destroy(ptr: *mut FrameEncoder) {
     if !ptr.is_null() {
+        // SAFETY: ptr was created by Box::into_raw in alice_codec_encoder_create.
         drop(Box::from_raw(ptr));
     }
 }
@@ -117,12 +124,12 @@ pub unsafe extern "C" fn alice_codec_encode(
     if encoder.is_null() || rgb_data.is_null() {
         return std::ptr::null_mut();
     }
+    // SAFETY: encoder is non-null and valid per caller contract.
     let enc = &*encoder;
+    // SAFETY: rgb_data is non-null and points to rgb_len contiguous bytes per caller contract.
     let rgb = slice::from_raw_parts(rgb_data, rgb_len as usize);
-    match enc.encode(rgb, width, height, frames) {
-        Ok(chunk) => Box::into_raw(Box::new(chunk)),
-        Err(_) => std::ptr::null_mut(),
-    }
+    enc.encode(rgb, width, height, frames)
+        .map_or(std::ptr::null_mut(), |chunk| Box::into_raw(Box::new(chunk)))
 }
 
 // ── Decode (1 function) ─────────────────────────────────────────
@@ -142,16 +149,15 @@ pub unsafe extern "C" fn alice_codec_decode(
     if chunk.is_null() || out_len.is_null() {
         return std::ptr::null_mut();
     }
+    // SAFETY: chunk is non-null and valid per caller contract.
     let c = &*chunk;
     let decoder = FrameDecoder::new();
-    match decoder.decode(c) {
-        Ok(rgb) => {
-            *out_len = rgb.len() as u32;
-            let boxed = rgb.into_boxed_slice();
-            Box::into_raw(boxed) as *mut u8
-        }
-        Err(_) => std::ptr::null_mut(),
-    }
+    decoder.decode(c).map_or(std::ptr::null_mut(), |rgb| {
+        // SAFETY: out_len is non-null and writable per caller contract.
+        *out_len = rgb.len() as u32;
+        let boxed = rgb.into_boxed_slice();
+        Box::into_raw(boxed).cast::<u8>()
+    })
 }
 
 // ── EncodedChunk (6 functions) ──────────────────────────────────
@@ -164,6 +170,8 @@ pub unsafe extern "C" fn alice_codec_decode(
 #[no_mangle]
 pub unsafe extern "C" fn alice_codec_chunk_destroy(ptr: *mut EncodedChunk) {
     if !ptr.is_null() {
+        // SAFETY: ptr was created by Box::into_raw in alice_codec_encode or
+        // alice_codec_chunk_from_bytes.
         drop(Box::from_raw(ptr));
     }
 }
@@ -181,11 +189,13 @@ pub unsafe extern "C" fn alice_codec_chunk_to_bytes(
     if chunk.is_null() || out_len.is_null() {
         return std::ptr::null_mut();
     }
+    // SAFETY: chunk is non-null and valid per caller contract.
     let c = &*chunk;
     let bytes = c.to_bytes();
+    // SAFETY: out_len is non-null and writable per caller contract.
     *out_len = bytes.len() as u32;
     let boxed = bytes.into_boxed_slice();
-    Box::into_raw(boxed) as *mut u8
+    Box::into_raw(boxed).cast::<u8>()
 }
 
 /// 13. Deserialize chunk from bytes. Returns null on error.
@@ -201,11 +211,10 @@ pub unsafe extern "C" fn alice_codec_chunk_from_bytes(
     if data.is_null() {
         return std::ptr::null_mut();
     }
+    // SAFETY: data is non-null and points to `len` contiguous bytes per caller contract.
     let bytes = slice::from_raw_parts(data, len as usize);
-    match EncodedChunk::from_bytes(bytes) {
-        Ok(chunk) => Box::into_raw(Box::new(chunk)),
-        Err(_) => std::ptr::null_mut(),
-    }
+    EncodedChunk::from_bytes(bytes)
+        .map_or(std::ptr::null_mut(), |chunk| Box::into_raw(Box::new(chunk)))
 }
 
 /// 14. Get chunk width.
@@ -214,10 +223,11 @@ pub unsafe extern "C" fn alice_codec_chunk_from_bytes(
 ///
 /// `chunk` must be a valid pointer.
 #[no_mangle]
-pub unsafe extern "C" fn alice_codec_chunk_width(chunk: *const EncodedChunk) -> u32 {
+pub const unsafe extern "C" fn alice_codec_chunk_width(chunk: *const EncodedChunk) -> u32 {
     if chunk.is_null() {
         return 0;
     }
+    // SAFETY: chunk is non-null and valid per caller contract.
     (*chunk).width
 }
 
@@ -227,10 +237,11 @@ pub unsafe extern "C" fn alice_codec_chunk_width(chunk: *const EncodedChunk) -> 
 ///
 /// `chunk` must be a valid pointer.
 #[no_mangle]
-pub unsafe extern "C" fn alice_codec_chunk_height(chunk: *const EncodedChunk) -> u32 {
+pub const unsafe extern "C" fn alice_codec_chunk_height(chunk: *const EncodedChunk) -> u32 {
     if chunk.is_null() {
         return 0;
     }
+    // SAFETY: chunk is non-null and valid per caller contract.
     (*chunk).height
 }
 
@@ -240,10 +251,11 @@ pub unsafe extern "C" fn alice_codec_chunk_height(chunk: *const EncodedChunk) ->
 ///
 /// `chunk` must be a valid pointer.
 #[no_mangle]
-pub unsafe extern "C" fn alice_codec_chunk_frames(chunk: *const EncodedChunk) -> u32 {
+pub const unsafe extern "C" fn alice_codec_chunk_frames(chunk: *const EncodedChunk) -> u32 {
     if chunk.is_null() {
         return 0;
     }
+    // SAFETY: chunk is non-null and valid per caller contract.
     (*chunk).frames
 }
 
@@ -259,6 +271,7 @@ pub unsafe extern "C" fn alice_codec_psnr(a: *const u8, b: *const u8, len: u32) 
     if a.is_null() || b.is_null() {
         return -1.0;
     }
+    // SAFETY: a and b are non-null and each point to `len` contiguous bytes per caller contract.
     let sa = slice::from_raw_parts(a, len as usize);
     let sb = slice::from_raw_parts(b, len as usize);
     metrics::psnr(sa, sb).unwrap_or(-1.0)
@@ -274,6 +287,8 @@ pub unsafe extern "C" fn alice_codec_psnr(a: *const u8, b: *const u8, len: u32) 
 #[no_mangle]
 pub unsafe extern "C" fn alice_codec_data_free(ptr: *mut u8, len: u32) {
     if !ptr.is_null() && len > 0 {
+        // SAFETY: ptr/len describe a buffer previously returned by this library
+        // via Box::into_raw(into_boxed_slice()). Caller guarantees single free.
         let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len as usize));
     }
 }
@@ -286,6 +301,7 @@ pub unsafe extern "C" fn alice_codec_data_free(ptr: *mut u8, len: u32) {
 #[no_mangle]
 pub unsafe extern "C" fn alice_codec_string_free(s: *mut c_char) {
     if !s.is_null() {
+        // SAFETY: s was created by CString::into_raw in alice_codec_version.
         drop(CString::from_raw(s));
     }
 }

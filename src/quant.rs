@@ -86,7 +86,7 @@ impl Quantizer {
     /// Uses dead-zone quantization: values in `[-dead_zone, dead_zone]` map to 0.
     #[must_use]
     #[inline]
-    pub fn quantize(&self, value: i32) -> i32 {
+    pub const fn quantize(&self, value: i32) -> i32 {
         if value.abs() < self.dead_zone {
             0
         } else if value >= 0 {
@@ -101,7 +101,7 @@ impl Quantizer {
     /// Maps quantized value back to reconstruction level.
     #[must_use]
     #[inline]
-    pub fn dequantize(&self, qvalue: i32) -> i32 {
+    pub const fn dequantize(&self, qvalue: i32) -> i32 {
         if qvalue == 0 {
             0
         } else {
@@ -187,12 +187,9 @@ impl FastQuantizer {
     /// # Errors
     ///
     /// Returns `CodecError::InvalidDimensions` if `step` is not positive.
-    pub fn new(step: i32) -> Result<Self, CodecError> {
+    pub const fn new(step: i32) -> Result<Self, CodecError> {
         if step <= 0 {
-            return Err(CodecError::InvalidDimensions {
-                width: step as u32,
-                height: 0,
-            });
+            return Err(CodecError::InvalidQuantStep(step));
         }
 
         // Compute magic number for unsigned division by step
@@ -232,7 +229,7 @@ impl FastQuantizer {
 
     /// Fast division: x / step using precomputed magic number
     #[inline]
-    fn fast_div(&self, x: u32) -> u32 {
+    const fn fast_div(&self, x: u32) -> u32 {
         // (x * reciprocal) >> shift
         let product = x as u64 * self.reciprocal;
         (product >> self.shift) as u32
@@ -243,7 +240,7 @@ impl FastQuantizer {
     /// Uses magic number division for speed.
     #[must_use]
     #[inline]
-    pub fn quantize(&self, value: i32) -> i32 {
+    pub const fn quantize(&self, value: i32) -> i32 {
         let abs_val = value.abs();
 
         // Dead-zone check
@@ -269,7 +266,7 @@ impl FastQuantizer {
     /// Dequantize a single coefficient
     #[must_use]
     #[inline]
-    pub fn dequantize(&self, qvalue: i32) -> i32 {
+    pub const fn dequantize(&self, qvalue: i32) -> i32 {
         if qvalue == 0 {
             0
         } else {
@@ -337,14 +334,14 @@ impl FastQuantizer {
     /// Get step size
     #[must_use]
     #[inline]
-    pub fn step(&self) -> i32 {
+    pub const fn step(&self) -> i32 {
         self.step
     }
 
     /// Get dead zone
     #[must_use]
     #[inline]
-    pub fn dead_zone(&self) -> i32 {
+    pub const fn dead_zone(&self) -> i32 {
         self.dead_zone
     }
 }
@@ -387,7 +384,7 @@ pub struct AnalyticalRDO {
 impl AnalyticalRDO {
     /// Create RDO optimizer with target bits-per-pixel
     #[must_use]
-    pub fn new(target_bpp: f64) -> Self {
+    pub const fn new(target_bpp: f64) -> Self {
         Self {
             target_bpp,
             quality: 75,
@@ -406,7 +403,7 @@ impl AnalyticalRDO {
         const RCP_100: f64 = 1.0 / 100.0;
         let quality = quality.min(100);
         let q = quality as f64 * RCP_100;
-        let target_bpp = 0.1 + q * q * 23.9;
+        let target_bpp = (q * q).mul_add(23.9, 0.1);
 
         Self {
             target_bpp,
@@ -495,14 +492,14 @@ impl AnalyticalRDO {
     /// Get current quality setting
     #[must_use]
     #[inline]
-    pub fn quality(&self) -> u8 {
+    pub const fn quality(&self) -> u8 {
         self.quality
     }
 
     /// Get target bits-per-pixel
     #[must_use]
     #[inline]
-    pub fn target_bpp(&self) -> f64 {
+    pub const fn target_bpp(&self) -> f64 {
         self.target_bpp
     }
 }
@@ -1113,6 +1110,55 @@ mod tests {
         fq.quantize_buffer_simd(&input, &mut out_simd);
 
         assert_eq!(out_scalar, out_simd);
+    }
+
+    #[test]
+    fn test_fast_quantizer_invalid_step() {
+        let err = FastQuantizer::new(0);
+        assert!(matches!(err, Err(CodecError::InvalidQuantStep(0))));
+
+        let err = FastQuantizer::new(-5);
+        assert!(matches!(err, Err(CodecError::InvalidQuantStep(-5))));
+    }
+
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn quantize_dequantize_bounded(step in 1i32..=128, value in -10000i32..=10000) {
+                let q = Quantizer::new(step);
+                let qv = q.quantize(value);
+                let dv = q.dequantize(qv);
+                if value.abs() < q.dead_zone {
+                    prop_assert_eq!(dv, 0);
+                } else {
+                    let max_error = q.step + q.dead_zone;
+                    prop_assert!((dv - value).abs() <= max_error,
+                        "step={step}, value={value}, dequant={dv}, error={}",
+                        (dv - value).abs());
+                }
+            }
+
+            #[test]
+            fn fast_quantizer_matches_regular(step in 1i32..=128, value in -10000i32..=10000) {
+                let regular = Quantizer::new(step);
+                let fast = FastQuantizer::new(step).unwrap();
+                prop_assert_eq!(regular.quantize(value), fast.quantize(value),
+                    "step={}, value={}", step, value);
+            }
+
+            #[test]
+            fn symbol_roundtrip(value in -127i32..=127) {
+                let coeffs = [value];
+                let mut symbols = [0u8; 1];
+                let mut recovered = [0i32; 1];
+                to_symbols(&coeffs, &mut symbols).unwrap();
+                from_symbols(&symbols, &mut recovered).unwrap();
+                prop_assert_eq!(recovered[0], value);
+            }
+        }
     }
 
     #[test]

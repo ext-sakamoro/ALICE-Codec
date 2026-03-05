@@ -2,6 +2,21 @@
 
 All notable changes to ALICE-Codec will be documented in this file.
 
+## [0.1.2] - 2026-03-05
+
+### Changed
+- `FastQuantizer::new` now returns `CodecError::InvalidQuantStep` instead of misusing `InvalidDimensions`
+- Added `// SAFETY:` inline comments to all FFI unsafe blocks
+- Updated quality metrics: 155 tests (140 unit + 15 doc-test)
+- `const fn` promotion: Quantizer, FastQuantizer, AnalyticalRDO, FrequencyTable, RansEncoder, Wavelet2D/3D, FFI getters
+- `mul_add` for numerically stable floating-point in RDO quality mapping
+- `Self::` for all `SubBand3D` match arms (clippy `use_self`)
+- `map_or` for FFI match→Result patterns (clippy `option_if_let_else`)
+- proptest property-based tests: quant (3), wavelet (2), color (2)
+
+### Fixed
+- `Cargo.toml` version synced to 0.1.1 (was behind CHANGELOG)
+
 ## [0.1.1] - 2026-03-04
 
 ### Added

@@ -187,7 +187,7 @@ pub struct EncodedChunk {
 impl EncodedChunk {
     /// Total size of the compressed payload in bytes.
     #[must_use]
-    pub fn compressed_size(&self) -> usize {
+    pub const fn compressed_size(&self) -> usize {
         self.compressed_data.len()
     }
 

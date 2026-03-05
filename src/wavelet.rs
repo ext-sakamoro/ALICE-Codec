@@ -269,7 +269,7 @@ pub struct Wavelet2D {
 impl Wavelet2D {
     /// Create 2D wavelet from 1D wavelet
     #[must_use]
-    pub fn new(wavelet_1d: Wavelet1D) -> Self {
+    pub const fn new(wavelet_1d: Wavelet1D) -> Self {
         Self { wavelet_1d }
     }
 
@@ -363,7 +363,7 @@ pub struct Wavelet3D {
 impl Wavelet3D {
     /// Create 3D wavelet from 1D wavelet
     #[must_use]
-    pub fn new(wavelet_1d: Wavelet1D) -> Self {
+    pub const fn new(wavelet_1d: Wavelet1D) -> Self {
         Self { wavelet_1d }
     }
 
@@ -670,6 +670,39 @@ mod tests {
         wavelet.inverse(&mut image, 4, 4);
         for (i, (&o, &r)) in original.iter().zip(image.iter()).enumerate() {
             assert!((o - r).abs() <= 3, "CDF97 2D mismatch at {i}: {o} vs {r}");
+        }
+    }
+
+    mod prop {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn cdf53_roundtrip_random(vals in proptest::collection::vec(-500i32..500, 8)) {
+                let wavelet = Wavelet1D::cdf53();
+                let original = vals.clone();
+                let mut signal = vals;
+                wavelet.forward(&mut signal);
+                wavelet.inverse(&mut signal);
+                for (i, (&o, &r)) in original.iter().zip(signal.iter()).enumerate() {
+                    prop_assert!((o - r).abs() <= 2,
+                        "Mismatch at {}: {} vs {}", i, o, r);
+                }
+            }
+
+            #[test]
+            fn haar_roundtrip_random(vals in proptest::collection::vec(-500i32..500, 8)) {
+                let wavelet = Wavelet1D::haar();
+                let original = vals.clone();
+                let mut signal = vals;
+                wavelet.forward(&mut signal);
+                wavelet.inverse(&mut signal);
+                for (i, (&o, &r)) in original.iter().zip(signal.iter()).enumerate() {
+                    prop_assert!((o - r).abs() <= 2,
+                        "Mismatch at {}: {} vs {}", i, o, r);
+                }
+            }
         }
     }
 

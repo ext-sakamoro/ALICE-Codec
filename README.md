@@ -531,7 +531,7 @@ This codec prioritizes **throughput** and **edit-friendliness** over **low laten
 
 | Metric | Value |
 |--------|-------|
-| Tests | 111 passing |
+| Tests | 148 passing (133 unit + 15 doc-test) |
 | Clippy (default) | 0 warnings |
 | Clippy (pedantic) | 0 warnings |
 | Format (`cargo fmt`) | 0 violations |
@@ -556,8 +556,8 @@ cargo build --release --features simd
 pip install maturin
 maturin develop --release --features python
 
-# Run tests (111 tests)
-cargo test
+# Run tests (148 tests with --features ffi)
+cargo test --features ffi
 
 # Pedantic lint check
 cargo clippy -- -W clippy::pedantic

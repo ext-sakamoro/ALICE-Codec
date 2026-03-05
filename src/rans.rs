@@ -206,14 +206,14 @@ impl FrequencyTable {
     /// Number of symbols in the table
     #[must_use]
     #[inline]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.symbols.len()
     }
 
     /// Check if table is empty
     #[must_use]
     #[inline]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.symbols.is_empty()
     }
 }
@@ -246,7 +246,7 @@ const RANS32_L: u32 = 1 << 23; // Lower bound for state
 impl RansEncoder {
     /// Create new encoder
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             state: RANS32_L,
             output: Vec::new(),
@@ -383,7 +383,7 @@ impl<'a> RansDecoder<'a> {
     /// Check if more data is available
     #[must_use]
     #[inline]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.pos >= self.input.len() && self.state < RANS32_L
     }
 }
@@ -398,7 +398,7 @@ pub struct InterleavedRansEncoder {
 impl InterleavedRansEncoder {
     /// Create new interleaved encoder
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             encoders: [
                 RansEncoder::new(),

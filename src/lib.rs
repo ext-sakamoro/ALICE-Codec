@@ -128,17 +128,14 @@ impl SubBand3D {
     #[must_use]
     #[inline]
     pub const fn is_temporal_high(&self) -> bool {
-        matches!(
-            self,
-            SubBand3D::LLH | SubBand3D::LHH | SubBand3D::HLH | SubBand3D::HHH
-        )
+        matches!(self, Self::LLH | Self::LHH | Self::HLH | Self::HHH)
     }
 
     /// Returns true if this is the lowest frequency sub-band
     #[must_use]
     #[inline]
     pub const fn is_dc(&self) -> bool {
-        matches!(self, SubBand3D::LLL)
+        matches!(self, Self::LLL)
     }
 
     /// Recommended quantization strength (higher = more aggressive)
@@ -146,10 +143,10 @@ impl SubBand3D {
     #[inline]
     pub const fn quant_strength(&self) -> u8 {
         match self {
-            SubBand3D::LLL => 1, // Preserve DC
-            SubBand3D::LLH | SubBand3D::LHL | SubBand3D::HLL => 2,
-            SubBand3D::LHH | SubBand3D::HLH | SubBand3D::HHL => 4,
-            SubBand3D::HHH => 8, // Most aggressive
+            Self::LLL => 1, // Preserve DC
+            Self::LLH | Self::LHL | Self::HLL => 2,
+            Self::LHH | Self::HLH | Self::HHL => 4,
+            Self::HHH => 8, // Most aggressive
         }
     }
 }

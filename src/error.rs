@@ -18,6 +18,8 @@ pub enum CodecError {
     DimensionOverflow,
     /// The compressed bitstream is malformed or truncated.
     InvalidBitstream(String),
+    /// Quantization step size is not positive.
+    InvalidQuantStep(i32),
 }
 
 impl fmt::Display for CodecError {
@@ -31,6 +33,9 @@ impl fmt::Display for CodecError {
             }
             Self::DimensionOverflow => write!(f, "dimensions overflow usize"),
             Self::InvalidBitstream(msg) => write!(f, "invalid bitstream: {msg}"),
+            Self::InvalidQuantStep(step) => {
+                write!(f, "quantization step must be positive, got {step}")
+            }
         }
     }
 }
