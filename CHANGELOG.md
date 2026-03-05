@@ -2,6 +2,13 @@
 
 All notable changes to ALICE-Codec will be documented in this file.
 
+## [0.1.1] - 2026-03-04
+
+### Added
+- `ffi` — 20 `extern "C"` FFI functions (Wavelet1D, FrameEncoder, EncodedChunk, Metrics)
+- Unity C# bindings (`bindings/unity/AliceCodec.cs`) — 20 DllImport + RAII classes
+- UE5 C++ header (`bindings/ue5/AliceCodec.h`) — 20 extern C + RAII wrappers
+
 ## [0.1.0] - 2026-02-23
 
 ### Added

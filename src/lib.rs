@@ -68,6 +68,9 @@ pub mod rans;
 pub mod segment;
 pub mod wavelet;
 
+#[cfg(feature = "ffi")]
+pub mod ffi;
+
 #[cfg(feature = "python")]
 mod python;
 
