@@ -61,11 +61,14 @@ extern crate alloc;
 
 pub mod color;
 pub mod error;
+pub mod lossless;
 pub mod metrics;
 pub mod pipeline;
 pub mod quant;
 pub mod rans;
+pub mod rate_control;
 pub mod segment;
+pub mod ssim;
 pub mod wavelet;
 
 #[cfg(feature = "ffi")]
@@ -94,6 +97,10 @@ pub use quant::{AnalyticalRDO, Quantizer};
 pub use rans::{RansDecoder, RansEncoder, RansState};
 pub use segment::{segment_by_chroma, segment_by_motion, SegmentConfig, SegmentResult};
 pub use wavelet::{Wavelet1D, Wavelet2D, Wavelet3D};
+
+pub use lossless::{verify_roundtrip_1d, verify_roundtrip_2d, LosslessEncoder};
+pub use rate_control::{estimate_quality, RateControlConfig, RateController};
+pub use ssim::{ms_ssim, ssim};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
