@@ -60,6 +60,7 @@
 extern crate alloc;
 
 pub mod color;
+pub mod container;
 pub mod error;
 pub mod lossless;
 pub mod metrics;
