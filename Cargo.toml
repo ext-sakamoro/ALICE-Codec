@@ -43,6 +43,11 @@ alice-db = { path = "../ALICE-DB", optional = true, default-features = false }
 alice-crypto = { path = "../ALICE-Crypto", optional = true, default-features = false, features = ["std"] }
 alice-cache = { path = "../ALICE-Cache", optional = true }
 
+# cargo-machete false-positive 予防 (canonical [[reference_alice_ci_canonical_template]] 罠 #3)
+# libm は #![no_std] 経路で使われるが cargo-machete が feature 依存を見落とす
+[package.metadata.cargo-machete]
+ignored = ["libm"]
+
 [profile.release]
 opt-level = 3
 lto = "fat"

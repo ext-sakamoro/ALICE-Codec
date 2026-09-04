@@ -1,0 +1,39 @@
+[package]
+name = "alice-codec-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.alice-codec]
+path = ".."
+default-features = false
+features = ["std"]
+
+# cargo-machete false-positive 予防 (canonical [[reference_alice_ci_canonical_template]] 罠 #3)
+[package.metadata.cargo-machete]
+ignored = ["libfuzzer-sys"]
+
+[[bin]]
+name = "fuzz_decode_chunk"
+path = "fuzz_targets/fuzz_decode_chunk.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_encode_roundtrip"
+path = "fuzz_targets/fuzz_encode_roundtrip.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_container_parse"
+path = "fuzz_targets/fuzz_container_parse.rs"
+doc = false
+
+[workspace]
+members = ["."]
