@@ -29,6 +29,11 @@ ignore = [
     "RUSTSEC-2024-0436",
     # crossbeam-epoch unmaintained (transitive、canonical 罠 #15 参照)
     "RUSTSEC-2026-0204",
+    # rkyv 0.7 Rc/Arc archive validation OOB: alice-db (db feature、local path dep) の archived 型に
+    # Rc/Arc 無し = 非該当 (CI では alice-db は stub のため出現しない、local --all-features 用)
+    "RUSTSEC-2026-0235",
+    # bincode 1.x unmaintained (alice-db 経由 transitive、alice-db 側で ignore 済と同期)
+    "RUSTSEC-2025-0141",
     # pyo3 経由の既知 advisory (python feature 有効時のみ、0.29 移行で解消)
     "RUSTSEC-2025-0020",  # PyString::from_object buffer overflow (0.24.1+ で fix)
     "RUSTSEC-2026-0176",  # nth/nth_back out-of-bounds read
@@ -80,7 +85,31 @@ license-files = [{ path = "LICENSE", hash = 0x001c7e6c }]
 # (canonical [[reference_alice_ci_canonical_template]] 罠 #7 の target-side 版)
 [[licenses.exceptions]]
 name = "alice-codec"
-allow = ["AGPL-3.0", "AGPL-3.0-only"]
+allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+
+# AGPL sibling path dep (canonical [[reference_alice_ci_canonical_template]] AGPL sibling exception)
+# CI では MIT stub、local では実 crate (AGPL-3.0-or-later) が解決されるため両方許可
+[[licenses.exceptions]]
+name = "alice-cache"
+allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+
+# AGPL sibling path dep (canonical [[reference_alice_ci_canonical_template]] AGPL sibling exception)
+# CI では MIT stub、local では実 crate (AGPL-3.0-or-later) が解決されるため両方許可
+[[licenses.exceptions]]
+name = "alice-crypto"
+allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+
+# AGPL sibling path dep (canonical [[reference_alice_ci_canonical_template]] AGPL sibling exception)
+# CI では MIT stub、local では実 crate (AGPL-3.0-or-later) が解決されるため両方許可
+[[licenses.exceptions]]
+name = "alice-db"
+allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+
+# AGPL sibling path dep (canonical [[reference_alice_ci_canonical_template]] AGPL sibling exception)
+# CI では MIT stub、local では実 crate (AGPL-3.0-or-later) が解決されるため両方許可
+[[licenses.exceptions]]
+name = "alice-ml"
+allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
 
 # ---------------------------------------------------------------------------
 # Bans (banned crate / duplicate / wildcard)

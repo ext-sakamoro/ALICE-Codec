@@ -13,18 +13,22 @@ runs:
     - shell: bash
       run: |
         set -euo pipefail
+        # dir:crate:version — version は Cargo.toml の `version = "..."` 要件を満たすこと
+        # (stub が古いと cargo update / audit / deny が「failed to select a version」で落ちる、2026-09-14 事案)
         for entry in \
-            ALICE-ML:alice-ml \
-            ALICE-DB:alice-db \
-            ALICE-Crypto:alice-crypto \
-            ALICE-Cache:alice-cache; do
-          dir="${entry%:*}"
-          crate="${entry#*:}"
+            ALICE-ML:alice-ml:0.2.0 \
+            ALICE-DB:alice-db:0.2.0-beta.1 \
+            ALICE-Crypto:alice-crypto:0.1.0 \
+            ALICE-Cache:alice-cache:0.2.0; do
+          dir="${entry%%:*}"
+          rest="${entry#*:}"
+          crate="${rest%%:*}"
+          version="${rest#*:}"
           mkdir -p "../${dir}/src"
           cat > "../${dir}/Cargo.toml" <<TOML
         [package]
         name = "${crate}"
-        version = "0.1.0"
+        version = "${version}"
         edition = "2021"
         license = "MIT OR Apache-2.0"
 
