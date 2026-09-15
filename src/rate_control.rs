@@ -47,6 +47,8 @@ pub struct RateController {
 }
 
 #[cfg(not(feature = "std"))]
+use crate::math::FloatExt;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 impl RateController {

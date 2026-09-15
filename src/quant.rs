@@ -40,6 +40,8 @@
 //! > "Division is just multiplication by a magic number."
 
 use crate::error::CodecError;
+#[cfg(not(feature = "std"))]
+use crate::math::FloatExt;
 use crate::SubBand3D;
 
 /// Quantizer configuration
@@ -601,7 +603,6 @@ pub fn build_histogram(symbols: &[u8]) -> [u32; 256] {
 
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod simd {
-    use super::*;
     use core::arch::x86_64::*;
 
     /// SIMD quantization (8 coefficients at a time)

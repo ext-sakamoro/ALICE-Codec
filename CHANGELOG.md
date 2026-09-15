@@ -2,6 +2,15 @@
 
 All notable changes to ALICE-Codec will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **`no_std` build が一度も通っていなかった** (`--no-default-features` で 22 error: `container` の `std::collections::HashMap` / `String` / `Vec`、`ssim` / `quant` / `rate_control` の f64 `mul_add` / `ln` / `exp`) — `src/math.rs` の `FloatExt` trait (`libm` 委譲、`std` 時は不使用) で修正、`container` module は `HashMap` metadata のため `std` 専用に gate (no_std では従来も compile 不能だったので API 影響なし) host rlib / `simd` / bare-metal `thumbv7em-none-eabihf` / `x86_64` cross で build を確認 (`crate-type` に cdylib を含むため `cargo check` では panic_handler / allocator 要求で落ちる、検証は `cargo rustc --crate-type rlib`)
+- x86_64 + `simd` の未使用 import 2 件 (`quant::simd` の `use super::*`、`rans` の空 `pub use simd::*`) と `ffi` test の `vec!` 2 件 (CI に clippy が無く未検出)
+
+### Changed
+- CI: それまで fmt + actionlint のみだったところに test (default + `std,cli,simd,ffi`) / clippy `--all-targets -D warnings` 2 variant / `no_std` job (rlib + thumbv7em + clippy-driver wrapper) / `msrv` job (`rust-version = 1.87` を `cargo +1.87 check` で実 compile) / `feature-powerset` (cargo-hack、std 固定 depth 2) / doc `-D warnings` を追加、rust-cache
+
 ## [0.1.2] - 2026-03-05
 
 ### Changed

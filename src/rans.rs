@@ -708,9 +708,6 @@ mod simd {
     }
 }
 
-#[cfg(all(target_arch = "x86_64", feature = "simd"))]
-pub use simd::*;
-
 #[cfg(test)]
 mod tests {
     use super::*;

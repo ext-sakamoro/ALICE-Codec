@@ -369,7 +369,7 @@ mod tests {
             assert!(!enc.is_null());
 
             // 4x4, 2 frames, RGB
-            let rgb = vec![128u8; 4 * 4 * 2 * 3];
+            let rgb = [128u8; 4 * 4 * 2 * 3];
             let chunk = alice_codec_encode(enc, rgb.as_ptr(), rgb.len() as u32, 4, 4, 2);
             assert!(!chunk.is_null());
 
@@ -394,7 +394,7 @@ mod tests {
     fn test_chunk_serialization() {
         unsafe {
             let enc = alice_codec_encoder_create(90);
-            let rgb = vec![100u8; 4 * 4 * 2 * 3];
+            let rgb = [100u8; 4 * 4 * 2 * 3];
             let chunk = alice_codec_encode(enc, rgb.as_ptr(), rgb.len() as u32, 4, 4, 2);
             assert!(!chunk.is_null());
 

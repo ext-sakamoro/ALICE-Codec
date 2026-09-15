@@ -4,6 +4,8 @@
 //! 主観品質との相関が高い。
 
 #[cfg(not(feature = "std"))]
+use crate::math::FloatExt;
+#[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 use crate::error::CodecError;

@@ -1,5 +1,15 @@
 name: CI
 
+# canonical CI template: [[reference_alice_ci_canonical_template]] 手順 4.5 / 4.6
+# 2026-09-15 強化 (罠 #25-27 / #29 遡及、それまで fmt + actionlint のみで test / clippy 未実行):
+# - test / clippy / doc を default + full native feature set (std,cli,simd,ffi) で `-D warnings`
+# - msrv job: `rust-version = "1.87"` 宣言を `cargo +1.87 check` で実 compile (罠 #27)
+# - no_std job: `crate-type = ["cdylib", "rlib"]` のため `cargo check --no-default-features` は cdylib の
+#   panic_handler / allocator 要求で落ちる → `cargo rustc --crate-type rlib` で検証、bare-metal thumbv7em で
+#   本物の no_std を証明 (2026-09-15 まで no_std build は 22 error で一度も通っていなかった)
+# - feature-powerset: std 固定 depth 2 (python = toolchain / ml・db・crypto・cache = sibling 実体、除外)
+# - 新設 job は sibling path dep (alice-ml / db / crypto / cache) の stub step 必須 (local は実体があり見落とす)
+
 on:
   push:
     branches: [main]
@@ -8,8 +18,97 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+  # full native feature set (python / sibling bridge を除く、test / clippy / doc で共用)
+  NATIVE_FEATURES: "std,cli,simd,ffi"
 
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test (default)
+        run: cargo test
+      - name: Test (full native feature set)
+        run: cargo test --features "$NATIVE_FEATURES"
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (default features, all targets)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (full native feature set, all targets)
+        run: cargo clippy --features "$NATIVE_FEATURES" --all-targets -- -D warnings
+
+  no_std:
+    name: no_std (rlib、host + bare-metal thumbv7em)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      # thumbv7em target は rust-toolchain.toml の `targets` で pinned toolchain 側に install
+      # (dtolnay の `targets:` は stable 側に入り pin と別 toolchain になる)
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (no_std, host)
+        run: cargo rustc --lib --no-default-features --crate-type rlib
+      - name: Build (no_std + simd, host)
+        run: cargo rustc --lib --no-default-features --features simd --crate-type rlib
+      - name: Build (no_std, bare-metal thumbv7em-none-eabihf)
+        run: cargo rustc --lib --no-default-features --crate-type rlib --target thumbv7em-none-eabihf
+      # cargo clippy は crate-type を上書きできないので clippy-driver を wrapper で差す
+      - name: Clippy (no_std + simd)
+        run: >-
+          RUSTC_WORKSPACE_WRAPPER="$(rustup which clippy-driver)"
+          cargo rustc --lib --no-default-features --features simd --crate-type rlib --
+          -D warnings
+
+  msrv:
+    name: MSRV (rust-version = 1.87 実 compile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      # 宣言値と同じ toolchain: Cargo.toml の rust-version を bump したら同 commit で @<version> も更新
+      - uses: dtolnay/rust-toolchain@1.87
+      - uses: Swatinem/rust-cache@v2
+      - name: Check (default + full native feature set)
+        run: |
+          cargo check --lib
+          cargo check --lib --features "$NATIVE_FEATURES"
+
+  feature-powerset:
+    name: Feature powerset (cargo-hack, std 固定, depth 2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@cargo-hack
+      # std 固定: std なしの組合せは cdylib link 要求で落ちるため no_std job 側で rlib として検証
+      - name: Powerset (std + {cli, simd, ffi} depth 2)
+        run: cargo hack check --lib --feature-powerset --depth 2 --exclude-features python,ml,db,crypto,cache --features std
+
   fmt:
     name: Format
     runs-on: ubuntu-latest
@@ -21,6 +120,20 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+  doc:
+    name: Doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create ALICE optional bridge stubs
+        uses: ./.github/actions/alice-stubs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Doc (full native feature set)
+        run: cargo doc --no-deps --features "$NATIVE_FEATURES"
+        env:
+          RUSTDOCFLAGS: "-Dwarnings"
+
   actionlint:
     name: actionlint (workflow YAML 検証)
     runs-on: ubuntu-latest
@@ -31,4 +144,3 @@ jobs:
         with:
           fail_level: error
           reporter: github-check
-

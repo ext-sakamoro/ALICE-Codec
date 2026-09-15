@@ -2,5 +2,8 @@
 [toolchain]
 channel = "1.98.1"
 components = ["rustfmt", "clippy"]
+# no_std 検証用 bare-metal target (CI no_std job + local、pinned toolchain に rustup が自動 install
+# dtolnay/rust-toolchain@stable の `targets:` は stable 側に入るので pin と別 toolchain になる罠)
+targets = ["thumbv7em-none-eabihf"]
 profile = "minimal"
 

@@ -35,7 +35,7 @@
 //!
 //! | Feature  | Default | Description |
 //! |----------|---------|-------------|
-//! | `std`    | **yes** | Enables standard-library types (`Vec`, `String`). Disable for `no_std`. |
+//! | `std`    | **yes** | Standard library (`HashMap` 等)。Disable for `no_std` (`alloc` 必須、`container` module は `std` 専用)。 |
 //! | `cli`    | no      | Builds the `alice-codec` command-line binary. |
 //! | `simd`   | no      | Enables AVX2 SIMD paths for rANS decoding. |
 //! | `python` | no      | PyO3 + NumPy bindings for Python interop. |
@@ -59,7 +59,11 @@
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
+pub(crate) mod math;
+
 pub mod color;
+/// MP4 / MKV container parser (`HashMap` metadata のため `std` 専用)
+#[cfg(feature = "std")]
 pub mod container;
 pub mod error;
 pub mod lossless;
