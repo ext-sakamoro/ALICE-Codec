@@ -4,6 +4,13 @@ All notable changes to ALICE-Codec will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- The optional bridges (`alice-ml` / `alice-db` / `alice-crypto` / `alice-cache`)
+  are plain crates.io dependencies (`path = "../ALICE-*"` removed); CI no
+  longer builds manifest-only sibling stubs, so `cargo audit` / `cargo deny`
+  see the real dependency tree. `alice-db` requirement `0.2.0-beta.2`.
+
 ### Fixed
 - **`no_std` build が一度も通っていなかった** (`--no-default-features` で 22 error: `container` の `std::collections::HashMap` / `String` / `Vec`、`ssim` / `quant` / `rate_control` の f64 `mul_add` / `ln` / `exp`) — `src/math.rs` の `FloatExt` trait (`libm` 委譲、`std` 時は不使用) で修正、`container` module は `HashMap` metadata のため `std` 専用に gate (no_std では従来も compile 不能だったので API 影響なし) host rlib / `simd` / bare-metal `thumbv7em-none-eabihf` / `x86_64` cross で build を確認 (`crate-type` に cdylib を含むため `cargo check` では panic_handler / allocator 要求で落ちる、検証は `cargo rustc --crate-type rlib`)
 - x86_64 + `simd` の未使用 import 2 件 (`quant::simd` の `use super::*`、`rans` の空 `pub use simd::*`) と `ffi` test の `vec!` 2 件 (CI に clippy が無く未検出)

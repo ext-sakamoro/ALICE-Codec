@@ -23,7 +23,8 @@ has_toolchain() { rustup toolchain list | grep -q "^$1"; }
 # Steps CI runs that this file cannot reproduce locally (they can only fail remotely):
 #   - security-audit.yml:audit:Install cargo-audit (needs network / runner-only)
 #   - security-audit.yml:deny:Install cargo-deny (needs network / runner-only)
-#   - security-audit.yml:coverage:Run coverage (needs network / runner-only)
+#   - security-audit.yml:coverage (job is continue-on-error: informational in CI)
+#   - security-audit.yml:semver-checks (job is continue-on-error: informational in CI)
 #   - fuzz.yml:fuzz:Install cargo-fuzz (needs network / runner-only)
 #   - fuzz.yml:fuzz:Build fuzz target (needs network / runner-only)
 #   - fuzz.yml:fuzz:Set fuzz duration (no cargo / grep)
@@ -35,7 +36,6 @@ need cargo-audit "cargo install cargo-audit --locked"
 need cargo-deny "cargo install cargo-deny --locked"
 need cargo-hack "cargo install cargo-hack --locked"
 need cargo-machete "cargo install cargo-machete --locked"
-need cargo-semver-checks "cargo install cargo-semver-checks --locked"
 has_toolchain 1.87 || { echo "missing toolchain 1.87 (rustup toolchain install 1.87)" >&2; exit 1; }
 
 step "ci.yml / clippy: Clippy (default features, all targets)"
@@ -146,15 +146,6 @@ step "security-audit.yml / stub-guard: Detect TODO / FIXME / XXX / HACK (informa
   else
     echo "✓ No TODO/FIXME/XXX/HACK in src/"
   fi
-)
-
-step "security-audit.yml / semver-checks: Run cargo semver-checks"
-(
-  export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"
-  cargo semver-checks check-release \
-    --package alice-codec \
-    --baseline-rev "HEAD~1" \
-    || true
 )
 
 step "fuzz.yml / build every fuzz target (nightly; the replay needs the runner)"

@@ -38,10 +38,10 @@ libm = "0.2"
 clap = { version = "4.5", features = ["derive"], optional = true }
 pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
 numpy = { version = "0.23", optional = true }
-alice-ml = { path = "../ALICE-ML", version = "0.2", optional = true, default-features = false, features = ["std"] }
-alice-db = { path = "../ALICE-DB", version = "0.2.0-beta.1", optional = true, default-features = false }
-alice-crypto = { path = "../ALICE-Crypto", version = "0.1", optional = true, default-features = false, features = ["std"] }
-alice-cache = { path = "../ALICE-Cache", version = "0.2", optional = true }
+alice-ml = { version = "0.2", optional = true, default-features = false, features = ["std"] }
+alice-db = { version = "0.2.0-beta.2", optional = true, default-features = false }
+alice-crypto = { version = "0.1", optional = true, default-features = false, features = ["std"] }
+alice-cache = { version = "0.2", optional = true }
 
 # cargo-machete false-positive 予防 (canonical [[reference_alice_ci_canonical_template]] 罠 #3)
 # libm は #![no_std] 経路で使われるが cargo-machete が feature 依存を見落とす
