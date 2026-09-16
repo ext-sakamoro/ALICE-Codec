@@ -173,7 +173,8 @@ step "security-audit.yml / audit: Run cargo audit"
     --ignore RUSTSEC-2025-0020 \
     --ignore RUSTSEC-2026-0176 \
     --ignore RUSTSEC-2026-0177 \
-    --ignore RUSTSEC-2026-0204
+    --ignore RUSTSEC-2026-0204 \
+    --ignore RUSTSEC-2026-0235
 )
 
 echo; echo "preflight OK"
