@@ -185,6 +185,21 @@ pub struct EncodedChunk {
 }
 
 impl EncodedChunk {
+    /// Quantization step actually used for each channel (Y, Co, Cg).
+    ///
+    /// The encoder widens the quality-derived step when a channel's largest
+    /// wavelet coefficient would not fit the symbol alphabet, so this is the
+    /// value the reconstruction error bound (`≤ step/2` per coefficient)
+    /// refers to.
+    #[must_use]
+    pub fn quant_steps(&self) -> [i32; 3] {
+        [
+            self.channel_headers[0].quant_step,
+            self.channel_headers[1].quant_step,
+            self.channel_headers[2].quant_step,
+        ]
+    }
+
     /// Total size of the compressed payload in bytes.
     #[must_use]
     pub const fn compressed_size(&self) -> usize {
@@ -465,8 +480,14 @@ impl FrameEncoder {
             let w3d = Wavelet3D::new(w1d.clone());
             w3d.forward(&mut buf, padded_w, padded_h, padded_frames);
 
-            // Build quantizer from the quality-derived step
-            let quantizer = Quantizer::new(quant_step);
+            // Build quantizer from the quality-derived step, widened so the
+            // largest coefficient still fits the 8-bit zigzag alphabet
+            // (q = 1 + (|c| − dz)/step ≤ 127 with dz = step ⇔ step ≥ |c|/127).
+            // Before 2026-09-17 the step was fixed and |q| > 127 wrapped in
+            // `to_symbols` — quality 100 decoded to 6 dB PSNR.
+            let max_abs = buf.iter().map(|c| c.unsigned_abs()).max().unwrap_or(0);
+            let min_step = max_abs.div_ceil(127) as i32;
+            let quantizer = Quantizer::new(quant_step.max(min_step));
 
             // Quantize
             let mut qbuf = vec![0i32; padded_pixels];

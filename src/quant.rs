@@ -52,9 +52,22 @@ use crate::SubBand3D;
 /// use alice_codec::Quantizer;
 ///
 /// let q = Quantizer::new(8);
-/// assert_eq!(q.quantize(20), 2);   // 20 / 8 = 2
-/// assert_eq!(q.dequantize(2), 16); // 2 * 8 = 16
+/// assert_eq!(q.quantize(20), 2);   // bin 2 = [16, 24)
+/// assert_eq!(q.dequantize(2), 20); // midpoint of bin 2
+/// assert_eq!(q.quantize(7), 0);    // inside the dead zone (-8, 8)
 /// ```
+///
+/// # Law (oracle: `tests/analytic_oracle.rs`)
+///
+/// `|v| < dead_zone ⇒ 0`; otherwise `q = sign(v) · (1 + ⌊(|v| − dz) / step⌋)`
+/// and the reconstruction is the midpoint of that bin,
+/// `sign(q) · (dz + (|q| − 1)·step + step/2)`, so `|v − deq(q(v))| ≤ step/2`
+/// outside the dead zone.  A `dead_zone ≤ 0` behaves as `1` (only 0 is zero).
+///
+/// History (2026-09-17): the earlier law `⌊(|v| − dz/2)/step⌋` with `q·step`
+/// reconstruction mapped `[dz, dz/2 + step)` to 0 as well and biased every
+/// non-zero coefficient towards zero by up to a full step (error ≤ step +
+/// dz/2, mean ≈ step) — the reconstructed image lost energy in every band.
 #[derive(Clone, Copy, Debug)]
 pub struct Quantizer {
     /// Quantization step size
@@ -83,31 +96,50 @@ impl Quantizer {
         Self { step, dead_zone }
     }
 
+    /// Effective dead zone (`dead_zone ≤ 0` degenerates to `1`)
+    #[inline]
+    const fn dz(&self) -> i32 {
+        if self.dead_zone < 1 {
+            1
+        } else {
+            self.dead_zone
+        }
+    }
+
     /// Quantize a single coefficient
     ///
-    /// Uses dead-zone quantization: values in `[-dead_zone, dead_zone]` map to 0.
+    /// Dead-zone quantization: values in `(-dead_zone, dead_zone)` map to 0,
+    /// the first non-zero bin is `[dead_zone, dead_zone + step)`.
     #[must_use]
     #[inline]
     pub const fn quantize(&self, value: i32) -> i32 {
-        if value.abs() < self.dead_zone {
-            0
-        } else if value >= 0 {
-            (value - self.dead_zone / 2) / self.step
+        let dz = self.dz() as u32;
+        let abs = value.unsigned_abs();
+        if abs < dz {
+            return 0;
+        }
+        let q = ((abs - dz) / self.step as u32 + 1) as i32;
+        if value < 0 {
+            -q
         } else {
-            (value + self.dead_zone / 2) / self.step
+            q
         }
     }
 
     /// Dequantize a single coefficient
     ///
-    /// Maps quantized value back to reconstruction level.
+    /// Maps quantized value back to the midpoint of its bin.
     #[must_use]
     #[inline]
     pub const fn dequantize(&self, qvalue: i32) -> i32 {
         if qvalue == 0 {
-            0
+            return 0;
+        }
+        let mag = self.dz() + (qvalue.unsigned_abs() as i32 - 1) * self.step + self.step / 2;
+        if qvalue < 0 {
+            -mag
         } else {
-            qvalue * self.step
+            mag
         }
     }
 
@@ -237,27 +269,27 @@ impl FastQuantizer {
         (product >> self.shift) as u32
     }
 
-    /// Quantize a single coefficient
-    ///
-    /// Uses magic number division for speed.
+    /// Effective dead zone (`dead_zone ≤ 0` degenerates to `1`)
+    #[inline]
+    const fn dz(&self) -> i32 {
+        if self.dead_zone < 1 {
+            1
+        } else {
+            self.dead_zone
+        }
+    }
+
+    /// Quantize a single coefficient (same law as [`Quantizer::quantize`],
+    /// magic-number division)
     #[must_use]
     #[inline]
     pub const fn quantize(&self, value: i32) -> i32 {
-        let abs_val = value.abs();
-
-        // Dead-zone check
-        if abs_val < self.dead_zone {
+        let dz = self.dz() as u32;
+        let abs_val = value.unsigned_abs();
+        if abs_val < dz {
             return 0;
         }
-
-        // Apply offset for dead-zone
-        let offset = self.dead_zone >> 1;
-        let adjusted = (abs_val - offset) as u32;
-
-        // Fast division
-        let q_abs = self.fast_div(adjusted) as i32;
-
-        // Restore sign
+        let q_abs = self.fast_div(abs_val - dz) as i32 + 1;
         if value < 0 {
             -q_abs
         } else {
@@ -265,14 +297,19 @@ impl FastQuantizer {
         }
     }
 
-    /// Dequantize a single coefficient
+    /// Dequantize a single coefficient (bin midpoint, same law as
+    /// [`Quantizer::dequantize`])
     #[must_use]
     #[inline]
     pub const fn dequantize(&self, qvalue: i32) -> i32 {
         if qvalue == 0 {
-            0
+            return 0;
+        }
+        let mag = self.dz() + (qvalue.unsigned_abs() as i32 - 1) * self.step + self.step / 2;
+        if qvalue < 0 {
+            -mag
         } else {
-            qvalue * self.step
+            mag
         }
     }
 
@@ -555,6 +592,11 @@ pub fn to_symbols(coeffs: &[i32], symbols: &mut [u8]) -> Result<(), CodecError> 
     }
 
     for (i, &coeff) in coeffs.iter().enumerate() {
+        // zigzag: 0, 1, -1, 2, -2, … ↦ 0, 1, 2, 3, 4, … ; the alphabet is u8 so
+        // |coeff| ≤ 127 — anything larger used to wrap silently (2026-09-17)
+        if !(-127..=127).contains(&coeff) {
+            return Err(CodecError::SymbolOverflow(coeff));
+        }
         symbols[i] = match coeff.cmp(&0) {
             core::cmp::Ordering::Equal => 0,
             core::cmp::Ordering::Greater => (coeff * 2 - 1) as u8,
@@ -620,8 +662,9 @@ mod simd {
         assert!(output.len() >= n);
 
         let step_vec = _mm256_set1_epi32(step);
-        let dead_zone_vec = _mm256_set1_epi32(dead_zone);
-        let half_dead_zone_vec = _mm256_set1_epi32(dead_zone / 2);
+        let dz = if dead_zone < 1 { 1 } else { dead_zone };
+        let dead_zone_vec = _mm256_set1_epi32(dz);
+        let one = _mm256_set1_epi32(1);
         let zero = _mm256_setzero_si256();
 
         let chunks = n / 8;
@@ -639,21 +682,16 @@ mod simd {
             // Compute sign
             let sign_mask = _mm256_cmpgt_epi32(zero, values);
 
-            // Quantize positive: (value - dead_zone/2) / step
-            let adjusted_pos = _mm256_sub_epi32(values, half_dead_zone_vec);
+            // q = 1 + (|v| - dz) / step  (same law as Quantizer::quantize)
+            let adjusted = _mm256_sub_epi32(abs_values, dead_zone_vec);
+            let quotient = _mm256_add_epi32(_mm256_div_epi32_approx(adjusted, step_vec), one);
 
-            // Quantize negative: (value + dead_zone/2) / step
-            let adjusted_neg = _mm256_add_epi32(values, half_dead_zone_vec);
-
-            // Select based on sign
-            let adjusted = _mm256_blendv_epi8(adjusted_pos, adjusted_neg, sign_mask);
-
-            // Integer division by step (approximate using multiply + shift)
-            // For exact division, we'd need a proper divider, but this is close enough
-            let quotient = _mm256_div_epi32_approx(adjusted, step_vec);
+            // Restore sign
+            let negated = _mm256_sub_epi32(zero, quotient);
+            let signed = _mm256_blendv_epi8(quotient, negated, sign_mask);
 
             // Zero out dead-zone values
-            let result = _mm256_blendv_epi8(quotient, zero, in_dead_zone);
+            let result = _mm256_blendv_epi8(signed, zero, in_dead_zone);
 
             _mm256_storeu_si256(output.as_mut_ptr().add(offset) as *mut __m256i, result);
         }
@@ -1091,11 +1129,13 @@ mod tests {
         let input = [0, 1, -1, 5, -5];
         let mut output = [0i32; 5];
         dequantize_subband(&input, &q, &mut output).unwrap();
+        // bin midpoints: dz + (|q| - 1) * step + step / 2 (was q * step before
+        // 2026-09-17, which pinned the biased reconstruction)
         assert_eq!(output[0], 0);
-        assert_eq!(output[1], 8);
-        assert_eq!(output[2], -8);
-        assert_eq!(output[3], 40);
-        assert_eq!(output[4], -40);
+        assert_eq!(output[1], 12);
+        assert_eq!(output[2], -12);
+        assert_eq!(output[3], 44);
+        assert_eq!(output[4], -44);
     }
 
     #[test]

@@ -24,6 +24,21 @@
 //! - K = 1.149604398
 //!
 //! We use fixed-point arithmetic with rounding for integer lifting.
+//!
+//! # Law (oracle: `tests/analytic_oracle.rs`)
+//!
+//! Every lifting step is `target[i] += round(coeff · (n_l + n_r) / 2¹²)` where
+//! `n_l`, `n_r` are the two neighbours (mirror boundary), so `coeff` is the
+//! published lifting coefficient in Q12.  The inverse subtracts the *same*
+//! rounded delta (not the delta of `−coeff`), which is what makes integer
+//! lifting exactly invertible on rounding ties.  Haar uses the pair stencil
+//! (`d = o − e`, `s = e + d/2`) instead of the symmetric one.
+//!
+//! History (2026-09-17): the earlier code halved every coefficient
+//! (`coeff · (l + r) / 2¹³`), so `cdf97()` leaked DC into the detail band
+//! (constant 1000 → −324) and `cdf53()` had half the JPEG2000 update, while
+//! `haar()` was really the 5/3 filter; the inverse used `−coeff` and lost
+//! perfect reconstruction on ties (n = 2 round trip off by one).
 
 #[cfg(not(feature = "std"))]
 use alloc::vec;
@@ -47,12 +62,16 @@ use alloc::vec::Vec;
 pub struct Wavelet1D {
     /// Lifting steps (predict/update pairs)
     steps: Vec<LiftingStep>,
+    /// Neighbour stencil: `false` = symmetric (`x[2i]`, `x[2i+2]` / `x[2i−1]`,
+    /// `x[2i+1]`), `true` = Haar pair (own even / own odd sample twice)
+    pair_stencil: bool,
 }
 
 /// Single lifting step
 #[derive(Clone, Copy, Debug)]
 pub struct LiftingStep {
-    /// Fixed-point coefficient (scaled by 2^12)
+    /// Fixed-point lifting coefficient (scaled by 2^12), applied to the sum of
+    /// the two neighbours: `delta = round(coeff · (n_l + n_r) / 4096)`
     pub coeff: i32,
     /// Direction: true = predict (even updates odd), false = update (odd updates even)
     pub predict: bool,
@@ -88,34 +107,42 @@ impl Wavelet1D {
                     predict: false,
                 }, // δ: update
             ],
+            pair_stencil: false,
         }
     }
 
     /// Create Haar wavelet (simplest, for testing)
+    ///
+    /// `d = o − e`, `s = e + d/2` — the same Q12 coefficients as 5/3 but on
+    /// the pair stencil (each odd sample sees only its own even partner).
     #[must_use]
     pub fn haar() -> Self {
         Self {
             steps: vec![
                 LiftingStep {
-                    coeff: -4096,
+                    coeff: -2048,
                     predict: true,
-                }, // d[n] = odd - even
+                }, // d[n] = odd - even  (−0.5 · (e + e))
                 LiftingStep {
-                    coeff: 2048,
+                    coeff: 1024,
                     predict: false,
-                }, // s[n] = even + d/2
+                }, // s[n] = even + d/2  (0.25 · (d + d))
             ],
+            pair_stencil: true,
         }
     }
 
     /// Create 5/3 wavelet (JPEG2000 lossless)
+    ///
+    /// Bit-exact with ITU-T T.800 (F.4.8.2): `d = o − ⌊(e_l + e_r)/2⌋`,
+    /// `s = e + ⌊(d_l + d_r + 2)/4⌋` — analysis taps low (−1 2 6 2 −1)/8,
+    /// high (−1 2 −1)/2.
     #[must_use]
     pub fn cdf53() -> Self {
-        // Integer 5/3 wavelet: perfect reconstruction guaranteed
         Self {
             steps: vec![
                 LiftingStep {
-                    coeff: -4096,
+                    coeff: -2048,
                     predict: true,
                 }, // d = odd - (even_l + even_r)/2
                 LiftingStep {
@@ -123,6 +150,7 @@ impl Wavelet1D {
                     predict: false,
                 }, // s = even + (d_l + d_r + 2)/4
             ],
+            pair_stencil: false,
         }
     }
 
@@ -139,11 +167,9 @@ impl Wavelet1D {
         // Apply lifting steps
         for step in &self.steps {
             if step.predict {
-                // Predict: odd[i] += coeff * (even[i] + even[i+1]) / 2
-                self.lift_predict(signal, step.coeff);
+                self.lift_predict(signal, step.coeff, 1);
             } else {
-                // Update: even[i] += coeff * (odd[i-1] + odd[i]) / 2
-                self.lift_update(signal, step.coeff);
+                self.lift_update(signal, step.coeff, 1);
             }
         }
 
@@ -153,7 +179,8 @@ impl Wavelet1D {
 
     /// Inverse wavelet transform (synthesis)
     ///
-    /// Reconstructs original signal from wavelet coefficients.
+    /// Reconstructs original signal from wavelet coefficients (exactly: each
+    /// step subtracts the identical rounded delta the forward step added).
     pub fn inverse(&self, signal: &mut [i32]) {
         let n = signal.len();
         if n < 2 {
@@ -166,69 +193,76 @@ impl Wavelet1D {
         // Apply lifting steps in reverse
         for step in self.steps.iter().rev() {
             if step.predict {
-                // Undo predict: odd[i] -= coeff * (even[i] + even[i+1]) / 2
-                self.lift_predict(signal, -step.coeff);
+                self.lift_predict(signal, step.coeff, -1);
             } else {
-                // Undo update: even[i] -= coeff * (odd[i-1] + odd[i]) / 2
-                self.lift_update(signal, -step.coeff);
+                self.lift_update(signal, step.coeff, -1);
             }
         }
     }
 
-    /// Predict step: updates odd samples using even samples
+    /// `round(coeff · sum / 4096)` with round-half-up (arithmetic shift = floor)
     #[inline]
-    fn lift_predict(&self, signal: &mut [i32], coeff: i32) {
+    const fn lift_delta(sum: i32, coeff: i32) -> i32 {
+        ((sum as i64 * coeff as i64 + 2048) >> 12) as i32
+    }
+
+    /// Predict step: odd[i] += sign · round(coeff · (even_l + even_r) / 4096)
+    #[inline]
+    fn lift_predict(&self, signal: &mut [i32], coeff: i32, sign: i32) {
         let n = signal.len();
         let half = n / 2;
 
         for i in 0..half {
             let even_left = signal[i * 2];
-            let even_right = if i * 2 + 2 < n {
+            let even_right = if self.pair_stencil {
+                even_left
+            } else if i * 2 + 2 < n {
                 signal[i * 2 + 2]
             } else {
-                signal[i * 2] // Mirror boundary
+                even_left // Mirror boundary
             };
-
-            // Fixed-point multiply with rounding
-            let avg = even_left + even_right;
-            let delta = ((avg as i64 * coeff as i64 + 4096) >> 13) as i32;
-            signal[i * 2 + 1] += delta;
+            let delta = Self::lift_delta(even_left + even_right, coeff);
+            signal[i * 2 + 1] += sign * delta;
         }
     }
 
-    /// Update step: updates even samples using odd samples
+    /// Update step: even[i] += sign · round(coeff · (odd_l + odd_r) / 4096)
     #[inline]
-    fn lift_update(&self, signal: &mut [i32], coeff: i32) {
+    fn lift_update(&self, signal: &mut [i32], coeff: i32, sign: i32) {
         let n = signal.len();
         let half = n / 2;
 
         for i in 0..half {
-            let odd_left = if i > 0 {
+            let odd_right = signal[i * 2 + 1];
+            let odd_left = if self.pair_stencil {
+                odd_right
+            } else if i > 0 {
                 signal[i * 2 - 1]
             } else {
-                signal[1] // Mirror boundary
+                odd_right // Mirror boundary
             };
-            let odd_right = signal[i * 2 + 1];
-
-            let avg = odd_left + odd_right;
-            let delta = ((avg as i64 * coeff as i64 + 4096) >> 13) as i32;
-            signal[i * 2] += delta;
+            let delta = Self::lift_delta(odd_left + odd_right, coeff);
+            signal[i * 2] += sign * delta;
         }
     }
 
     /// Deinterleave: [e0, o0, e1, o1, ...] → [e0, e1, ..., o0, o1, ...]
+    ///
+    /// Odd lengths keep the trailing even sample at the end of the low band
+    /// (it is never lifted, so this is what makes odd-length transforms
+    /// lossless — before 2026-09-17 it was dropped and read back as 0).
     fn deinterleave(&self, signal: &mut [i32]) {
         let n = signal.len();
         let half = n / 2;
-
-        // Use temporary buffer (could be optimized with in-place algorithm)
+        let low = n - half; // ceil(n / 2)
+                            // Use temporary buffer (could be optimized with in-place algorithm)
         let mut temp = vec![0i32; n];
-
-        for i in 0..half {
+        for i in 0..low {
             temp[i] = signal[i * 2]; // Even → first half
-            temp[half + i] = signal[i * 2 + 1]; // Odd → second half
         }
-
+        for i in 0..half {
+            temp[low + i] = signal[i * 2 + 1]; // Odd → second half
+        }
         signal.copy_from_slice(&temp);
     }
 
@@ -236,14 +270,14 @@ impl Wavelet1D {
     fn interleave(&self, signal: &mut [i32]) {
         let n = signal.len();
         let half = n / 2;
-
+        let low = n - half;
         let mut temp = vec![0i32; n];
-
-        for i in 0..half {
+        for i in 0..low {
             temp[i * 2] = signal[i]; // First half → even
-            temp[i * 2 + 1] = signal[half + i]; // Second half → odd
         }
-
+        for i in 0..half {
+            temp[i * 2 + 1] = signal[low + i]; // Second half → odd
+        }
         signal.copy_from_slice(&temp);
     }
 }

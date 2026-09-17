@@ -108,27 +108,44 @@ impl FrequencyTable {
             return Self::uniform(n_symbols);
         }
 
-        // Normalize frequencies to PROB_SCALE
+        // Normalize frequencies to PROB_SCALE (oracle: tests/analytic_oracle.rs)
+        //
+        // Absent symbols get frequency 0 — they are never encoded, so they
+        // need no slot — and every present symbol gets ≥ 1.  The rounding
+        // residue is absorbed by the most frequent symbol, which always has
+        // enough slack.  History (2026-09-17): absent symbols used to get 1
+        // slot each and the residue was dumped on symbol 255; with a skewed
+        // histogram (e.g. 87 % zeros) the sum overshot 4096, symbol 255's
+        // frequency wrapped negative and the cumulative range of a real
+        // symbol crossed PROB_SCALE — round trip failed for exactly the
+        // histograms a wavelet codec produces.
+        let mut freqs = vec![0u32; n_symbols];
+        let mut normalized_total = 0u32;
+        let mut argmax = 0usize;
+        for (i, &count) in histogram.iter().enumerate() {
+            if count == 0 {
+                continue;
+            }
+            let freq = ((count as u64 * PROB_SCALE as u64) / total).max(1) as u32;
+            freqs[i] = freq;
+            normalized_total += freq;
+            if count > histogram[argmax] {
+                argmax = i;
+            }
+        }
+        // `max(1)` can only push the sum above PROB_SCALE by fewer than the
+        // number of present symbols (≤ 256 ≪ 4096); floor can only pull it
+        // below — the dominant symbol absorbs either direction.
+        let diff = PROB_SCALE as i64 - normalized_total as i64;
+        freqs[argmax] = (freqs[argmax] as i64 + diff) as u32;
+        debug_assert!(freqs[argmax] >= 1);
+        debug_assert_eq!(freqs.iter().sum::<u32>(), PROB_SCALE);
+
         let mut symbols = Vec::with_capacity(n_symbols);
         let mut cum_freq = 0u32;
-        let mut normalized_total = 0u32;
-
-        for &count in histogram {
-            let freq = if count == 0 {
-                1 // Minimum frequency to avoid division by zero
-            } else {
-                ((count as u64 * PROB_SCALE as u64) / total).max(1) as u32
-            };
-            normalized_total += freq;
+        for &freq in &freqs {
             symbols.push(RansSymbol::new(cum_freq as u16, freq as u16));
             cum_freq += freq;
-        }
-
-        // Adjust last symbol to ensure total equals PROB_SCALE
-        if !symbols.is_empty() && normalized_total != PROB_SCALE {
-            let diff = PROB_SCALE as i32 - normalized_total as i32;
-            let last = symbols.last_mut().unwrap();
-            last.freq = (last.freq as i32 + diff) as u16;
         }
 
         // Build cumulative-to-symbol lookup table
