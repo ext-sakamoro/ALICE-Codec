@@ -4,6 +4,9 @@ All notable changes to ALICE-Codec will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- README / lib.rs の全称 claim を実態に限定し、各 claim 行に `<!-- claim-test: fn -->` で検証 test を紐付け (strict-eval 検査 1、2026-09-17)
+
 ### Added
 - `tests/analytic_oracle.rs` — 閉形式 / 独立参照との突合 oracle 15 本 (CLAUDE.md § 解析解突合テスト規律、2026-09-17): lifting wavelet の完全再構成 (任意 i32 / 奇数長 / 2D) / JPEG2000 5/3 impulse response (T.800 タップ) / Haar pair / 定数・線形・3 次多項式の vanishing moment / f64 lifting 参照 / 2D 分離可能性、rANS の Shannon bound (≤ +2 %) + round-trip + interleaved ≡ scalar、dead-zone 量子化の bin 閉形式、YCoCg-R 可逆 + 灰 ⇒ Co = Cg = 0、PSNR / SSIM 閉形式、pipeline 既定 path (定数 frame ⇒ 定数 + DC bound、quality 単調、quality 100 ≥ 40 dB)、rate control 閉形式
 - `EncodedChunk::quant_steps()` — channel 毎に実際に使った量子化 step (encoder が symbol 範囲のため広げた値)

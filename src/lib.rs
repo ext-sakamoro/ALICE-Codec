@@ -14,7 +14,9 @@
 //! # Key Innovations
 //!
 //! - **No I/P/B Frames**: Entire chunk processed as 3D volume
-//! - **Integer Lifting**: No floating-point, perfect reconstruction
+//! - **Integer Lifting**: the wavelet core (`wavelet` / `rans` / `lossless`) is integer-only with
+//!   perfect reconstruction (quality metrics `ssim` / `metrics`, `rate_control` and `quant` use f32)
+//!   <!-- claim-test: test_cdf97_roundtrip -->
 //! - **Analytical RDO**: One-shot optimal quantization, no iteration
 //! - **rANS**: Near Shannon-limit compression at memory bandwidth speed
 //!

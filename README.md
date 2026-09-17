@@ -178,7 +178,8 @@ ycocg_r_to_rgb(&y_out, &co, &cg, &mut rgb_out);
 
 ### 1. 3D Integer CDF 9/7 Wavelet Transform
 
-- **Lifting Scheme**: No floating-point. Perfect reconstruction guaranteed.
+- **Lifting Scheme**: integer-only wavelet core (`wavelet` / `rans` / `lossless`), perfect reconstruction guaranteed — `ssim` / `metrics` / `rate_control` / `quant` use f32 for quality metrics and rate control, not for the reconstructed samples
+  <!-- claim-test: test_cdf97_roundtrip -->
 - **Spatial (x, y)**: Same as JPEG2000
 - **Temporal (t)**: Motion becomes high-frequency sub-bands
 - **Complexity**: O(N) vs O(N²) block matching
