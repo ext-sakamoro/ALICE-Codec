@@ -4,6 +4,8 @@ All notable changes to ALICE-Codec will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-17
+
 ### Changed
 - README / lib.rs の全称 claim を実態に限定し、各 claim 行に `<!-- claim-test: fn -->` で検証 test を紐付け (strict-eval 検査 1、2026-09-17)
 
