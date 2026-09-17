@@ -52,7 +52,8 @@ ignored = ["libm"]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+# panic = "abort" は撤去 (2026-09-17): FFI の catch_unwind (src/ffi.rs guard) は
+# unwind でしか機能せず、abort だと host process ごと落ちる
 strip = true
 
 [dev-dependencies]

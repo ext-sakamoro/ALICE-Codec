@@ -4,6 +4,11 @@ All notable changes to ALICE-Codec will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **FFI 17 関数の panic 隔離** (`src/ffi.rs`): 全 `extern "C"` (`const fn` の field 読み出し 3 本を除く) の本体を `ffi_guard(sentinel, || ..)` で包み、panic は host を落とさず sentinel (null / −1.0 / ()) + `alice_codec_last_error()` (新規、`alice_codec_clear_last_error` / `alice_codec_free_error_string` も) で通知 `[profile.release] panic = "abort"` を撤去 (abort では `catch_unwind` が機能しない) release profile で guard test 通過
+
+## [Unreleased]
+
 ### Changed
 
 - The optional bridges (`alice-ml` / `alice-db` / `alice-crypto` / `alice-cache`)
