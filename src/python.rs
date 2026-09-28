@@ -13,7 +13,10 @@ use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, P
 use pyo3::prelude::*;
 
 use crate::color::{rgb_bytes_to_ycocg_r, ycocg_r_to_rgb_bytes};
-use crate::pipeline::{CodecError, EncodedChunk, FrameDecoder, FrameEncoder, WaveletType};
+// CodecError は crate::error が定義元 pipeline は private import しているだけなので
+// そこから辿ると E0603 (private enum import) になる
+use crate::error::CodecError;
+use crate::pipeline::{EncodedChunk, FrameDecoder, FrameEncoder, WaveletType};
 use crate::segment::{
     crop_to_bbox, paste_from_bbox, segment_by_chroma, segment_by_motion, SegmentConfig,
     SegmentResult,

@@ -4,6 +4,9 @@ All notable changes to ALICE-Codec will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **`python` feature が compile 不能だった (E0603、publish 済 0.1.3 を含む)** `src/python.rs` が `CodecError` を `crate::pipeline` から import していたが、`pipeline.rs` の `use crate::error::CodecError;` は **private import** なので経由できない (定義元は `src/error.rs`) 定義元から直接 import するよう修正 **`alice-codec 0.1.3` は `python` feature 付きで crates.io に出ているが、その feature では誰も build できない状態だった** 見逃されていた理由は CI が `python` を一度も compile していなかったこと (`cargo hack ... --exclude-features python,ml,db,crypto,cache`、他 job も `$NATIVE_FEATURES` 限定) 新設の `package-integrity` job (`cargo check --all-features`) が初回の compile で検出した 検証: Mac mini で `cargo check --all-features` が error 0 で完走
+
 ### Changed
 - **License: `AGPL-3.0-or-later` → `AGPL-3.0-or-later OR LicenseRef-Commercial` (dual-licensed、2026-09-27)** AGPL 側の条件は変更なし (既存 AGPL 利用者への影響ゼロ)、商用という選択肢が追加されただけ SPDX が AGPL 単独だと cargo-deny / FOSSA / SBOM に「商用オプションなし」と見えるため宣言を dual に 変更点: SPDX / `LICENSE` → `LICENSE-AGPL` rename / `LICENSE-COMMERCIAL.md` (商用トリガー 6 条件 = クローズド製品・商用 SaaS・エッジ・ファームウェア配布・plugin 再配布・プラットフォーム NDA・保証、社内利用は AGPL 側で無償と明記) / README の選択肢表 商用窓口は法人 `contact@extoria.co.jp`
 
