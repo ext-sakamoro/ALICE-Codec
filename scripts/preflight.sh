@@ -79,6 +79,10 @@ step "ci.yml / doc: Doc (full native feature set)"
 step "ci.yml / actionlint: actionlint"
 actionlint .github/workflows/*.yml
 
+step "ci.yml / actionlint: workflow-timeouts (every job has timeout-minutes)"
+python3 scripts/test_workflow_timeouts.py
+python3 scripts/workflow_timeouts.py
+
 step "security-audit.yml / deny: Run cargo deny check all"
 ( export CARGO_TERM_COLOR="always" CARGO_NET_RETRY="5" CARGO_HTTP_MULTIPLEXING="false"; cargo deny --all-features check all )
 
