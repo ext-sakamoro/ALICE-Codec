@@ -14,7 +14,7 @@ name: Fuzz
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'ci/**']
     paths:
       - 'src/**'
       - 'fuzz/**'
