@@ -1,11 +1,12 @@
 [package]
 name = "alice-codec"
+publish = false
 version = "0.1.3"
 edition = "2021"
 rust-version = "1.87"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "Hyper-Fast 3D Wavelet Video Codec"
-license = "AGPL-3.0-or-later OR LicenseRef-Commercial"
+license = "LicenseRef-Proprietary"
 repository = "https://github.com/ext-sakamoro/ALICE-Codec"
 keywords = ["codec", "video", "wavelet", "compression", "rans"]
 categories = ["compression", "multimedia::video"]

@@ -85,7 +85,7 @@ license-files = [{ path = "LICENSE", hash = 0x001c7e6c }]
 # (canonical [[reference_alice_ci_canonical_template]] 罠 #7 の target-side 版)
 [[licenses.exceptions]]
 name = "alice-codec"
-allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+allow = ["LicenseRef-Proprietary"]
 
 # AGPL sibling path dep (canonical [[reference_alice_ci_canonical_template]] AGPL sibling exception)
 # CI では MIT stub、local では実 crate (AGPL-3.0-or-later) が解決されるため両方許可
