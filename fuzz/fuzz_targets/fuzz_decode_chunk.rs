@@ -4,7 +4,6 @@
 //! (ネットワーク配信 / disk load) 任意 bytes を食わせても panic せず
 //! Result で返ることを保証する
 //!
-//! canonical CI template [[reference_alice_ci_canonical_template]] 準拠
 
 #![no_main]
 

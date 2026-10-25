@@ -4,7 +4,6 @@
 //! するため MP4 / MKV parser を露出している 任意 bytes (攻撃者制御 file /
 //! network stream) を食わせても panic せず Option/Vec で返ることを保証する
 //!
-//! canonical CI template [[reference_alice_ci_canonical_template]] 準拠
 
 #![no_main]
 

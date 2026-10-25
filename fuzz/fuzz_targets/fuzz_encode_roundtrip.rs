@@ -5,7 +5,6 @@
 //! roundtrip で header (width/height/frames/wavelet_type) が bit-exact に
 //! 保存されることを保証する
 //!
-//! canonical CI template [[reference_alice_ci_canonical_template]] 準拠
 
 #![no_main]
 

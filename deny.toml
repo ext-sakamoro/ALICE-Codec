@@ -5,7 +5,7 @@
 #
 # ALICE-Codec 自体は LicenseRef-Proprietary (target-side self exception 必須)
 # sibling stubs (alice-ml/alice-db/alice-crypto/alice-cache) は alice-stubs action で
-# "MIT OR Apache-2.0" で生成される (canonical 罠 #2 予防)
+# "MIT OR Apache-2.0" で生成される
 
 [graph]
 all-features = false
@@ -24,9 +24,8 @@ version = 2
 yanked = "deny"
 ignore = [
     # paste 1.0.15 unmaintained (pyo3-macros transitive、python feature 有効時のみ)
-    # canonical 罠 #15
     "RUSTSEC-2024-0436",
-    # crossbeam-epoch unmaintained (transitive、canonical 罠 #15 参照)
+    # crossbeam-epoch unmaintained (transitive)
     "RUSTSEC-2026-0204",
     # rkyv 0.7 Rc/Arc archive validation OOB: alice-db (db feature、local path dep) の archived 型に
     # Rc/Arc 無し = 非該当 (CI では alice-db は stub のため出現しない、local --all-features 用)
@@ -60,10 +59,10 @@ allow = [
     "BSL-1.0",
     "MPL-2.0",   # file 単位の license、OK
     "OpenSSL",
-    # Font-related licenses (font pipeline は現状無いが将来的な transitive 予防、canonical 罠 #14)
+    # Font-related licenses (font pipeline は現状無いが将来的な transitive 予防)
     "OFL-1.1",
     "Ubuntu-font-1.0",
-    # LLVM ecosystem (libfuzzer-sys 経由、canonical 罠 #14)
+    # LLVM ecosystem (libfuzzer-sys 経由)
     "NCSA",
 ]
 

@@ -1,9 +1,8 @@
 name: CI
 
-# canonical CI template: [[reference_alice_ci_canonical_template]] 手順 4.5 / 4.6
-# 2026-09-15 強化 (罠 #25-27 / #29 遡及、それまで fmt + actionlint のみで test / clippy 未実行):
+# 2026-09-15 強化 (それまで fmt + actionlint のみで test / clippy 未実行):
 # - test / clippy / doc を default + full native feature set (std,cli,simd,ffi) で `-D warnings`
-# - msrv job: `rust-version = "1.87"` 宣言を `cargo +1.87 check` で実 compile (罠 #27)
+# - msrv job: `rust-version = "1.87"` 宣言を `cargo +1.87 check` で実 compile
 # - no_std job: `crate-type = ["cdylib", "rlib"]` のため `cargo check --no-default-features` は cdylib の
 #   panic_handler / allocator 要求で落ちる → `cargo rustc --crate-type rlib` で検証、bare-metal thumbv7em で
 #   本物の no_std を証明 (2026-09-15 まで no_std build は 22 error で一度も通っていなかった)

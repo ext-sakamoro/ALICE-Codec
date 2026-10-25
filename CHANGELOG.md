@@ -5,7 +5,7 @@ All notable changes to ALICE-Codec will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
-- **`python` feature が compile 不能だった (E0603、publish 済 0.1.3 を含む)** `src/python.rs` が `CodecError` を `crate::pipeline` から import していたが、`pipeline.rs` の `use crate::error::CodecError;` は **private import** なので経由できない (定義元は `src/error.rs`) 定義元から直接 import するよう修正 **`alice-codec 0.1.3` は `python` feature 付きで crates.io に出ているが、その feature では誰も build できない状態だった** 見逃されていた理由は CI が `python` を一度も compile していなかったこと (`cargo hack ... --exclude-features python,ml,db,crypto,cache`、他 job も `$NATIVE_FEATURES` 限定) 新設の `package-integrity` job (`cargo check --all-features`) が初回の compile で検出した 検証: Mac mini で `cargo check --all-features` が error 0 で完走
+- **`python` feature が compile 不能だった (E0603、publish 済 0.1.3 を含む)** `src/python.rs` が `CodecError` を `crate::pipeline` から import していたが、`pipeline.rs` の `use crate::error::CodecError;` は **private import** なので経由できない (定義元は `src/error.rs`) 定義元から直接 import するよう修正 **`alice-codec 0.1.3` は `python` feature 付きで crates.io に出ているが、その feature では誰も build できない状態だった** 見逃されていた理由は CI が `python` を一度も compile していなかったこと (`cargo hack ... --exclude-features python,ml,db,crypto,cache`、他 job も `$NATIVE_FEATURES` 限定) 新設の `package-integrity` job (`cargo check --all-features`) が初回の compile で検出した 検証: arm64 機 で `cargo check --all-features` が error 0 で完走
 
 ### Changed
 - CI: 上限の無かった 16 job に `timeout-minutes` を付けた (止まった step は共有 runner を GitHub の上限の 6 時間まで占有しうる) 値は直近の成功した run 10 本の所要時間の最大の 2 倍・中央値の 4 倍の大きい方を 5 分単位に切り上げ、cargo を使う job は最低 15 分 (cache が外れた build のため)、他は最低 10 分 fuzz は 30 分で、`workflow_dispatch` の `duration_seconds` は 1 から 1200 の整数 (先頭の 0 は不可、0 は libFuzzer で無制限になる) でなければ理由を出して止める (それより長い run は build と合わせて上限を超え途中で切れる) 入力は script に埋め込まず `env` で渡す `scripts/workflow_timeouts.py` (試験 `scripts/test_workflow_timeouts.py`、ALICE-LOL と byte 一致) が全 job の上限を検査し、job を 1 つも読めなければ失敗する CI (actionlint job) と preflight で走る
@@ -18,7 +18,7 @@ All notable changes to ALICE-Codec will be documented in this file.
 - README / lib.rs の全称 claim を実態に限定し、各 claim 行に `<!-- claim-test: fn -->` で検証 test を紐付け (strict-eval 検査 1、2026-09-17)
 
 ### Added
-- `tests/analytic_oracle.rs` — 閉形式 / 独立参照との突合 oracle 15 本 (CLAUDE.md § 解析解突合テスト規律、2026-09-17): lifting wavelet の完全再構成 (任意 i32 / 奇数長 / 2D) / JPEG2000 5/3 impulse response (T.800 タップ) / Haar pair / 定数・線形・3 次多項式の vanishing moment / f64 lifting 参照 / 2D 分離可能性、rANS の Shannon bound (≤ +2 %) + round-trip + interleaved ≡ scalar、dead-zone 量子化の bin 閉形式、YCoCg-R 可逆 + 灰 ⇒ Co = Cg = 0、PSNR / SSIM 閉形式、pipeline 既定 path (定数 frame ⇒ 定数 + DC bound、quality 単調、quality 100 ≥ 40 dB)、rate control 閉形式
+- `tests/analytic_oracle.rs` — 閉形式 / 独立参照との突合 oracle 15 本: lifting wavelet の完全再構成 (任意 i32 / 奇数長 / 2D) / JPEG2000 5/3 impulse response (T.800 タップ) / Haar pair / 定数・線形・3 次多項式の vanishing moment / f64 lifting 参照 / 2D 分離可能性、rANS の Shannon bound (≤ +2 %) + round-trip + interleaved ≡ scalar、dead-zone 量子化の bin 閉形式、YCoCg-R 可逆 + 灰 ⇒ Co = Cg = 0、PSNR / SSIM 閉形式、pipeline 既定 path (定数 frame ⇒ 定数 + DC bound、quality 単調、quality 100 ≥ 40 dB)、rate control 閉形式
 - `EncodedChunk::quant_steps()` — channel 毎に実際に使った量子化 step (encoder が symbol 範囲のため広げた値)
 - `CodecError::SymbolOverflow` — `to_symbols` が `|q| > 127` で fail fast (以前は u8 に silent wrap)
 
