@@ -272,6 +272,7 @@ Better decorrelation than YCbCr. Lossless round-trip.
 | **Quantization** | `quant.rs` | Dead-zone quantizer, `FastQuantizer` (magic division), Analytical RDO |
 | **Entropy** | `rans.rs` | 32-bit rANS, Interleaved 4-stream, `SimdRansDecoder` |
 | **Segmentation** | `segment.rs` | Person segmentation (motion/chroma-key), separable morphology, RLE mask |
+| **Appearance** | `appearance.rs` | Measures for comparing a render with a reference: CIEDE2000 on CIELAB (linear sRGB, D65), radial power spectrum, 1-Wasserstein distance, normal-map angles, dominant period; transcendentals through `alice-det-math` |
 | **Python** | `python.rs` | PyO3 + NumPy zero-copy bindings (GIL release) |
 
 ## SIMD Optimizations

@@ -36,11 +36,12 @@ cache = ["dep:alice-cache", "std"]  # ALICE-Cache decoded frame caching
 
 [dependencies]
 libm = "0.2"
+alice-det-math = { git = "https://github.com/ext-sakamoro/ALICE-DetMath", rev = "2d01c63ff0849cf0ab82eafb89f87f1b729bd2a8", version = "0.5.2", default-features = false }
 clap = { version = "4.5", features = ["derive"], optional = true }
 pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
 numpy = { version = "0.23", optional = true }
-alice-ml = { version = "0.2", optional = true, default-features = false, features = ["std"] }
-alice-db = { version = "0.2.0-beta.2", optional = true, default-features = false }
+alice-ml = { git = "https://github.com/ext-sakamoro/ALICE-ML", rev = "6e0dd06086b29987237f69e6e049a75ce231e7fb", version = "0.4.0", optional = true, default-features = false, features = ["std"] }
+alice-db = { git = "https://github.com/ext-sakamoro/ALICE-DB", rev = "866b8f11575c0bc936bdb322450066625b49e449", version = "0.6.0", optional = true, default-features = false, features = ["fs"] }
 alice-crypto = { version = "0.1", optional = true, default-features = false, features = ["std"] }
 alice-cache = { version = "0.2", optional = true }
 

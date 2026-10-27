@@ -23,6 +23,9 @@ pub enum CodecError {
     /// A quantized coefficient does not fit the 8-bit zigzag symbol alphabet
     /// (`|q| ≤ 127`); the encoder chooses the step so this cannot happen.
     SymbolOverflow(i32),
+    /// A measure was given input it cannot measure: nothing to compare, a non-finite value, a zero-length
+    /// normal or a flat image for a period (see [`crate::appearance`])
+    InvalidInput(String),
 }
 
 impl fmt::Display for CodecError {
@@ -45,6 +48,7 @@ impl fmt::Display for CodecError {
                     "quantized coefficient {q} exceeds the 8-bit symbol range (|q| <= 127)"
                 )
             }
+            Self::InvalidInput(msg) => write!(f, "invalid input: {msg}"),
         }
     }
 }

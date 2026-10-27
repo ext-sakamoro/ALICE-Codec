@@ -93,15 +93,23 @@ allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
 name = "alice-crypto"
 allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
 
-# sibling path dep: CI では stub、local では実 crate が解決されるため例外で許可
+# git の rev で固定した alice-* (Cargo.toml): 例外は固定した rev の宣言 (LicenseRef-Proprietary) どおり、rev を上げる commit で一緒に変える
+# alice-zip は alice-db (db feature) が引く
 [[licenses.exceptions]]
 name = "alice-db"
-allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+allow = ["LicenseRef-Proprietary"]
 
-# sibling path dep: CI では stub、local では実 crate が解決されるため例外で許可
 [[licenses.exceptions]]
 name = "alice-ml"
-allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+allow = ["LicenseRef-Proprietary"]
+
+[[licenses.exceptions]]
+name = "alice-det-math"
+allow = ["LicenseRef-Proprietary"]
+
+[[licenses.exceptions]]
+name = "alice-zip"
+allow = ["LicenseRef-Proprietary"]
 
 # ---------------------------------------------------------------------------
 # Bans (banned crate / duplicate / wildcard)

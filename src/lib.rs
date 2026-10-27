@@ -63,6 +63,7 @@ extern crate alloc;
 
 pub(crate) mod math;
 
+pub mod appearance;
 pub mod color;
 /// MP4 / MKV container parser (`HashMap` metadata のため `std` 専用)
 #[cfg(feature = "std")]

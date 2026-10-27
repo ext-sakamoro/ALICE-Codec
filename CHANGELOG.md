@@ -4,10 +4,15 @@ All notable changes to ALICE-Codec will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- `appearance` module: 描画を手本と比べる指標 `linear_from_srgb8` (IEC 61966-2-1) / `lab_from_linear_srgb` (CIELAB、D65 の白は行列による (1, 1, 1) の像) / `delta_e2000` と `delta_e_stats` (平均・nearest rank の 95 パーセンタイル・最大) / `radial_power_spectrum` (平均を引いた画像の power を整数半径の環に集める、半径 min(w, h)/2 まで) / `wasserstein1` (経験分布関数で比べる、件数が違ってよい) / `normal_angle_stats` / `dominant_period` (x 方向) 超越関数はすべて `alice-det-math` を通すので、どの platform でも同じ bit になる 測れない入力 (長さの不一致・比べる物が無い・非有限・長さ 0 の法線・平坦な画像) は数値でなく `Err` を返す oracle は `tests/appearance_oracle.rs`: Sharma ら 2005 の Table 1 (34 組、5e-5 以内、対称)、sRGB の変換 256 値、CIELAB の白・灰・赤、Parseval と cosine ごとに 1 つの環、W1 の閉形式、法線の角度、縞の周期 2-16 `examples/appearance.rs` が生成した 2 つの模様で各指標を示す
+- `CodecError::InvalidInput`: `appearance` の指標に測れない入力を渡した時の error
+
 ### Fixed
 - **`python` feature が compile 不能だった (E0603、publish 済 0.1.3 を含む)** `src/python.rs` が `CodecError` を `crate::pipeline` から import していたが、`pipeline.rs` の `use crate::error::CodecError;` は **private import** なので経由できない (定義元は `src/error.rs`) 定義元から直接 import するよう修正 **`alice-codec 0.1.3` は `python` feature 付きで crates.io に出ているが、その feature では誰も build できない状態だった** 見逃されていた理由は CI が `python` を一度も compile していなかったこと (`cargo hack ... --exclude-features python,ml,db,crypto,cache`、他 job も `$NATIVE_FEATURES` 限定) 新設の `package-integrity` job (`cargo check --all-features`) が初回の compile で検出した 検証: arm64 機 で `cargo check --all-features` が error 0 で完走
 
 ### Changed
+- 依存: `alice-det-math` を追加 (git ALICE-DetMath 2d01c63) / `alice-ml` 0.2 (crates.io) → 0.4.0 (git ALICE-ML 6e0dd06) / `alice-db` 0.2.0-beta.2 (crates.io) → 0.6.0 (git ALICE-DB 866b8f1、`CodecMetricsSink::open` が要る `fs` feature 付き) 全 feature で `alice-det-math` は 1 版だけ link される (ML と DB が同じ revision を使う) deny.toml の license 例外は固定した rev の宣言 (LicenseRef-Proprietary) に合わせ、`alice-det-math` と DB が引く `alice-zip` を足した
 - CI: 上限の無かった 16 job に `timeout-minutes` を付けた (止まった step は共有 runner を GitHub の上限の 6 時間まで占有しうる) 値は直近の成功した run 10 本の所要時間の最大の 2 倍・中央値の 4 倍の大きい方を 5 分単位に切り上げ、cargo を使う job は最低 15 分 (cache が外れた build のため)、他は最低 10 分 fuzz は 30 分で、`workflow_dispatch` の `duration_seconds` は 1 から 1200 の整数 (先頭の 0 は不可、0 は libFuzzer で無制限になる) でなければ理由を出して止める (それより長い run は build と合わせて上限を超え途中で切れる) 入力は script に埋め込まず `env` で渡す `scripts/workflow_timeouts.py` (試験 `scripts/test_workflow_timeouts.py`、ALICE-LOL と byte 一致) が全 job の上限を検査し、job を 1 つも読めなければ失敗する CI (actionlint job) と preflight で走る
 - CI: どの workflow も `ci/**` の branch への push でも走るようにした (`push.branches` に `ci/**` を足した) main に入れる前の commit をその branch で検証するため これまでは main への push と pull request でしか走らず、branch の commit には CI の結果が無かった ci.yml には concurrency を足し、同じ branch に新しい commit が来たら古い run を止める (main では commit ごとに別の group で止めない) path の条件がある workflow (fuzz / security-audit) は従来どおり対象の path が変わった時だけ走る
 - Licence: `AGPL-3.0-or-later` → `LicenseRef-Proprietary`
