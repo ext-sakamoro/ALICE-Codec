@@ -266,5 +266,26 @@ fn dominant_period_of_stripes() {
         assert!((got - p as f64).abs() < 1e-12, "period {p}: {got}");
     }
     assert!(dominant_period(&vec![0.5; w * h], w, h).is_err());
+    // varying only along y: refused whatever the amplitude (what is left along x is round-off)
+    for amp in [1.0, 1e3, 1e6, 1e9] {
+        let img: Vec<f64> = (0..w * h)
+            .map(|i| amp * (0.37 * (i / w) as f64).sin())
+            .collect();
+        assert!(
+            dominant_period(&img, w, h).is_err(),
+            "y-only image at amplitude {amp} was given a period"
+        );
+    }
+    // real stripes are found at any amplitude
+    for amp in [1e-13, 1e-9, 1e-3, 1e6] {
+        let img: Vec<f64> = (0..w * h)
+            .map(|i| if (i % w) % 16 < 8 { amp } else { 0.0 })
+            .collect();
+        assert_eq!(
+            dominant_period(&img, w, h).unwrap(),
+            16.0,
+            "stripes at amplitude {amp}"
+        );
+    }
     assert!(dominant_period(&[0.0; 3], 2, 2).is_err());
 }

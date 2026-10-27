@@ -391,11 +391,14 @@ pub fn normal_angle_stats(a: &[[f64; 3]], b: &[[f64; 3]]) -> Result<Stats, Codec
 ///
 /// # Errors
 ///
-/// As [`radial_power_spectrum`], and [`CodecError::InvalidInput`] for an image with no variation along x.
+/// As [`radial_power_spectrum`], and [`CodecError::InvalidInput`] for an image with no variation along x: the
+/// power at every k ≥ 1 is at most 1e-20 of the image's total power w·Σ(x − mean)², whatever its amplitude.
 pub fn dominant_period(img: &[f64], w: usize, h: usize) -> Result<f64, CodecError> {
     check_image(img, w, h)?;
     let mean = img.iter().sum::<f64>() / img.len() as f64;
     let mut re: Vec<f64> = img.iter().map(|v| v - mean).collect();
+    // Parseval: the row DFTs hold w·Σ(x − mean)² over every k and row
+    let total = w as f64 * re.iter().map(|v| v * v).sum::<f64>();
     let mut im = vec![0.0; w * h];
     dft_rows(&mut re, &mut im, w, h);
     let mut best = (0usize, 0.0f64);
@@ -410,8 +413,9 @@ pub fn dominant_period(img: &[f64], w: usize, h: usize) -> Result<f64, CodecErro
             best = (k, p);
         }
     }
-    let scale: f64 = re.iter().map(|v| v.abs()).fold(0.0, f64::max);
-    if best.0 == 0 || best.1 <= 1e-24 * scale.max(1.0) {
+    // relative to the image's own power, so the refusal does not depend on its amplitude: what is left
+    // along x of an image that varies only along y is DFT round-off, far below 1e-20 of the total
+    if best.0 == 0 || total == 0.0 || best.1 <= 1e-20 * total {
         return Err(invalid("no variation along x"));
     }
     Ok(w as f64 / best.0 as f64)
