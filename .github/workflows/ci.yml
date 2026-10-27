@@ -121,6 +121,12 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
+      # A git consumer (no sibling repositories next to it) builds alice-codec with the default
+      # features, with ml and with db; 0 crates compiled fails. This is the on-push check while the
+      # packaged-crate check is dormant (.github/workflows/package-integrity.yml)
+      - name: git consumer builds alice-codec alone
+        run: python3 scripts/test_git_consumer.py
+
   doc:
     name: Doc
     runs-on: ubuntu-latest
