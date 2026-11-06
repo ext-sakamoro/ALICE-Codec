@@ -74,7 +74,8 @@ pub struct ContainerInfo {
 pub enum ContainerError {
     /// データがヘッダーの途中で終わる
     Truncated { offset: usize },
-    /// 仕様にない長さ (ヘッダーより短い等)
+    /// 仕様にない長さ (ヘッダーより短い等)、または仕様にない ID (RFC 8794 §5)、この parser の上限
+    /// (幅 8) を超える VINT
     InvalidSize { offset: usize },
     /// ヘッダーは読めたが、本体がデータの外で終わる
     PastEnd { offset: usize },
@@ -95,6 +96,9 @@ impl core::fmt::Display for ContainerError {
 
 impl std::error::Error for ContainerError {}
 
+/// `uuid` ボックスの `usertype` の長さ (ISO/IEC 14496-12 §4.2.2)
+const UUID_USERTYPE_LEN: usize = 16;
+
 // ============================================================================
 // ISO Base Media File Format (MP4) パーサー
 // ============================================================================
@@ -110,9 +114,10 @@ pub struct Mp4Box {
     pub data_offset: usize,
 }
 
-/// ボックスヘッダーを `offset` からパース (ISO/IEC 14496-12 §4.2)。
+/// ボックスヘッダーを `offset` からパース (ISO/IEC 14496-12 §4.2.2)。
 ///
-/// `size == 0` はファイル末尾まで、`size == 1` は 64 bit の `largesize` が続く。ヘッダーだけを読むので、
+/// `size == 0` はファイル末尾まで、`size == 1` は 64 bit の `largesize` が続く。`uuid` のヘッダーは
+/// 16 バイト長く、`payload_size` と `data_offset` はその分を含まない。ヘッダーだけを読むので、
 /// 本体がデータの外へ出るボックスも返す (全体を歩く [`list_mp4_boxes`] は `PastEnd` にする)。
 /// `offset` にバイトが無ければ `Ok(None)`。
 ///
@@ -132,7 +137,8 @@ pub fn parse_mp4_box(data: &[u8], offset: usize) -> Result<Option<Mp4Box>, Conta
     };
     let box_type = [t0, t1, t2, t3];
 
-    let (payload_size, header_size) = match u32::from_be_bytes([s0, s1, s2, s3]) {
+    let size_field = u32::from_be_bytes([s0, s1, s2, s3]);
+    let (payload_size, header_size): (u64, usize) = match size_field {
         // ファイル末尾までのボックス
         0 => (after_header.len() as u64, 8),
         // 64-bit extended size
@@ -145,6 +151,25 @@ pub fn parse_mp4_box(data: &[u8], offset: usize) -> Result<Option<Mp4Box>, Conta
         }
         2..=7 => return Err(invalid),
         size => (u64::from(size) - 8, 8),
+    };
+
+    // a uuid box has a 16-byte usertype after the size fields, part of its header
+    let (payload_size, header_size) = if box_type == *b"uuid" {
+        let header_size = header_size + UUID_USERTYPE_LEN;
+        if rest.len() < header_size {
+            let declares_too_little = size_field != 0 && payload_size < UUID_USERTYPE_LEN as u64;
+            return Err(if declares_too_little {
+                invalid
+            } else {
+                truncated
+            });
+        }
+        let payload = payload_size
+            .checked_sub(UUID_USERTYPE_LEN as u64)
+            .ok_or(invalid)?;
+        (payload, header_size)
+    } else {
+        (payload_size, header_size)
     };
 
     Ok(Some(Mp4Box {
@@ -261,7 +286,8 @@ pub fn decode_vint_size(data: &[u8], offset: usize) -> Option<(u64, usize)> {
     Some((value, len))
 }
 
-/// `offset` の VINT の幅 (RFC 8794 §4)。先頭バイトが 0 なら幅が 8 を超える。
+/// `offset` の VINT の幅。先頭バイトが 0 なら幅が 8 を超える。8 まではこの parser の上限で、
+/// RFC 8794 の上限ではない (§5 と §6.1 は `EBMLMaxIDLength` / `EBMLMaxSizeLength` で長さを許す)。
 fn vint_at(data: &[u8], at: usize, offset: usize) -> Result<(u64, usize), ContainerError> {
     match data.get(at) {
         Some(0) => Err(ContainerError::InvalidSize { offset }),
@@ -276,8 +302,9 @@ fn vint_at(data: &[u8], at: usize, offset: usize) -> Result<(u64, usize), Contai
 ///
 /// # Errors
 ///
-/// データがヘッダーの途中で終わる時は [`ContainerError::Truncated`]、VINT の幅が 8 を超える時や ID の
-/// データ部が全 0 / 全 1 の時は [`ContainerError::InvalidSize`]、サイズのデータ部が全 1 の時は
+/// データがヘッダーの途中で終わる時は [`ContainerError::Truncated`]、VINT の幅が 8 を超える時 (この
+/// parser の上限) や ID のデータ部が全 0 / 全 1、または ID が最短の符号化でない時 (RFC 8794 §5) は
+/// [`ContainerError::InvalidSize`]、サイズのデータ部が全 1 の時は
 /// [`ContainerError::UnknownSize`] (ストリームの master element では正当だが、この関数では長さが
 /// 分からない)。
 pub fn parse_ebml_element(
@@ -290,6 +317,11 @@ pub fn parse_ebml_element(
     let (id, id_len) = vint_at(data, offset, offset)?;
     let id_marker = 1u64 << (7 * id_len);
     if id == id_marker || id == (id_marker << 1) - 1 {
+        return Err(ContainerError::InvalidSize { offset });
+    }
+    // RFC 8794 §5: an ID uses the shortest encoding. A shorter width could hold every value below its
+    // all-ones data, which an ID must not have
+    if id_len > 1 && (id ^ id_marker) < (1u64 << (7 * (id_len - 1))) - 1 {
         return Err(ContainerError::InvalidSize { offset });
     }
     let (raw_size, size_len) = vint_at(data, offset + id_len, offset)?;

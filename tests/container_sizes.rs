@@ -1,12 +1,15 @@
 //! `alice_codec::container`: box and element sizes against their specifications.
 //!
 //! oracle: the expected column is written from the specifications, not from the code.
-//! - ISO/IEC 14496-12 §4.2: `size` counts the header; `size == 1` means a 64-bit `largesize` follows;
+//! - ISO/IEC 14496-12 §4.2.2: `size` counts the header; `size == 1` means a 64-bit `largesize` follows;
 //!   `size == 0` means the box extends to the end of the file. A header is at least 8 bytes (16 with
-//!   `largesize`), so a `size` of 2 to 7 and a `largesize` under 16 cannot be a box.
-//! - RFC 8794 §4: a VINT has its width in the leading zeros of the first byte, up to 8 bytes.
-//!   §5: the data of an Element ID must not be all zeros or all ones. §6.2: a size with all data
-//!   bits set means an unknown size, legal for a master element in a stream.
+//!   `largesize`), so a `size` of 2 to 7 and a `largesize` under 16 cannot be a box. A `uuid` box has a
+//!   16-byte `usertype` in its header, which `payload_size` and `data_offset` leave out.
+//! - RFC 8794 §4: a VINT has its width in the leading zeros of the first byte. §5 and §6.1 allow widths
+//!   over 8 through `EBMLMaxIDLength` / `EBMLMaxSizeLength`; a width over 8 is refused as the limit of
+//!   this parser, not of the RFC. §5: the data of an Element ID must not be all zeros or all ones, and
+//!   an ID uses the shortest encoding. §6.2: a size with all data bits set means an unknown size,
+//!   legal for a master element in a stream.
 //!
 //! `Truncated` is a header the data ends inside. `PastEnd` is a whole header whose box or element
 //! ends after the data: a file cut short and a corrupt size look the same, and the specifications
@@ -114,6 +117,87 @@ fn mp4_rows() -> Vec<(&'static str, Vec<u8>, Boxes)> {
             "largesize 0",
             mp4_large(0, b"aaaa", b""),
             Err(InvalidSize { offset: 0 }),
+        ),
+        // uuid: 16 more bytes of header, left out of the payload
+        (
+            "uuid",
+            mp4(26, b"uuid", &[7; 18]),
+            Ok(vec![(b"uuid", 2, 24)]),
+        ),
+        (
+            "uuid, no payload",
+            mp4(24, b"uuid", &[7; 16]),
+            Ok(vec![(b"uuid", 0, 24)]),
+        ),
+        (
+            "uuid then a box",
+            [mp4(24, b"uuid", &[7; 16]), mp4(8, b"bbbb", b"")].concat(),
+            Ok(vec![(b"uuid", 0, 24), (b"bbbb", 0, 32)]),
+        ),
+        (
+            "uuid, size 0",
+            mp4(0, b"uuid", &[7; 19]),
+            Ok(vec![(b"uuid", 3, 24)]),
+        ),
+        (
+            "uuid, size 0, no payload",
+            mp4(0, b"uuid", &[7; 16]),
+            Ok(vec![(b"uuid", 0, 24)]),
+        ),
+        (
+            "uuid, largesize",
+            mp4_large(34, b"uuid", &[7; 18]),
+            Ok(vec![(b"uuid", 2, 32)]),
+        ),
+        (
+            "uuid, largesize 32",
+            mp4_large(32, b"uuid", &[7; 16]),
+            Ok(vec![(b"uuid", 0, 32)]),
+        ),
+        (
+            "uuid, size 23",
+            mp4(23, b"uuid", &[7; 16]),
+            Err(InvalidSize { offset: 0 }),
+        ),
+        (
+            "uuid, size 23, cut",
+            mp4(23, b"uuid", &[7; 3]),
+            Err(InvalidSize { offset: 0 }),
+        ),
+        (
+            "uuid, size 8",
+            mp4(8, b"uuid", &[7; 16]),
+            Err(InvalidSize { offset: 0 }),
+        ),
+        (
+            "uuid, largesize 31",
+            mp4_large(31, b"uuid", &[7; 16]),
+            Err(InvalidSize { offset: 0 }),
+        ),
+        (
+            "uuid, largesize 16",
+            mp4_large(16, b"uuid", &[7; 16]),
+            Err(InvalidSize { offset: 0 }),
+        ),
+        (
+            "uuid, usertype cut",
+            mp4(24, b"uuid", &[7; 15]),
+            Err(Truncated { offset: 0 }),
+        ),
+        (
+            "uuid, size 0, usertype cut",
+            mp4(0, b"uuid", &[7; 15]),
+            Err(Truncated { offset: 0 }),
+        ),
+        (
+            "uuid, largesize, usertype cut",
+            mp4_large(32, b"uuid", &[7; 15]),
+            Err(Truncated { offset: 0 }),
+        ),
+        (
+            "uuid, payload past the end",
+            mp4(25, b"uuid", &[7; 16]),
+            Err(PastEnd { offset: 0 }),
         ),
         // sizes that cannot hold the header
         (
@@ -337,7 +421,41 @@ fn ebml_rows() -> Vec<(&'static str, Vec<u8>, Elements)> {
             vec![0x81, 1, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe],
             Err(PastEnd { offset: 0 }),
         ),
+        // the shortest encoding of an ID (RFC 8794 §5)
+        (
+            "id 1 in 2 bytes",
+            vec![0x40, 0x01, 0x80],
+            Err(InvalidSize { offset: 0 }),
+        ),
+        (
+            "id 126 in 2 bytes",
+            vec![0x40, 0x7e, 0x80],
+            Err(InvalidSize { offset: 0 }),
+        ),
+        (
+            "id 1 in 4 bytes",
+            vec![0x10, 0, 0, 0x01, 0x80],
+            Err(InvalidSize { offset: 0 }),
+        ),
+        // 127 is all ones in one byte, which an ID must not be, so two bytes is its shortest
+        (
+            "id 127 in 2 bytes",
+            vec![0x40, 0x7f, 0x80],
+            Ok(vec![(0x407f, 0, 3)]),
+        ),
+        (
+            "id 128 in 2 bytes",
+            vec![0x40, 0x80, 0x80],
+            Ok(vec![(0x4080, 0, 3)]),
+        ),
+        // the width of a size has no such rule
+        (
+            "size 1 in 2 bytes",
+            vec![0x81, 0x40, 0x01, b'x'],
+            Ok(vec![(0x81, 1, 3)]),
+        ),
         // invalid
+        // over 8 is the limit of this parser, not of RFC 8794 (§5, §6.1)
         (
             "id width over 8",
             vec![0x00, 0x81, 0x80],
