@@ -4,6 +4,14 @@ All notable changes to ALICE-Codec will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **`container::list_mp4_boxes` / `list_ebml_elements` が細工された長さで桁あふれしていた** — `offset += total` は overflow check の無い release で wrap し、先頭へ戻った位置から存在しないボックスを列挙した (check のある build では panic) この crate の中と ALICE-* の src に呼び出し元は無い
+
+### Changed
+- **Breaking (0.2.0)**: `parse_mp4_box` / `parse_ebml_element` は `Result<Option<_>, ContainerError>`、`list_mp4_boxes` / `list_ebml_elements` は `Result<Vec<_>, ContainerError>` になった 以前は不正な長さで短い一覧を返し、完全な一覧と区別できなかった `ContainerError` は `Truncated` (ヘッダーの途中で終わる) / `InvalidSize` (ISO/IEC 14496-12 の `size` 2 から 7、`largesize` 16 未満、RFC 8794 の幅 9 以上の VINT と全 0・全 1 の ID) / `PastEnd` (本体がデータの外) / `UnknownSize` (RFC 8794 の unknown size は正当だが長さを求めない)
+- CI: `fuzz.yml` の `Run fuzz target` の `continue-on-error` を外し、crash で job を red にする artifact は残す
+- CI: `ci.yml` に `cargo test --release --test container_sizes` を足した
+
 ### Added
 - `appearance` module: 描画を手本と比べる指標 `linear_from_srgb8` (IEC 61966-2-1) / `lab_from_linear_srgb` (CIELAB、D65 の白は行列による (1, 1, 1) の像) / `delta_e2000` と `delta_e_stats` (平均・nearest rank の 95 パーセンタイル・最大) / `radial_power_spectrum` (平均を引いた画像の power を整数半径の環に集める、半径 min(w, h)/2 まで) / `wasserstein1` (経験分布関数で比べる、件数が違ってよい) / `normal_angle_stats` / `dominant_period` (x 方向) 超越関数はすべて `alice-det-math` を通すので、どの platform でも同じ bit になる 測れない入力 (長さの不一致・比べる物が無い・非有限・長さ 0 の法線・平坦な画像) は数値でなく `Err` を返す oracle は `tests/appearance_oracle.rs`: Sharma ら 2005 の Table 1 (34 組、5e-5 以内、対称)、sRGB の変換 256 値、CIELAB の白・灰・赤、Parseval と cosine ごとに 1 つの環、W1 の閉形式、法線の角度、縞の周期 2-16 `examples/appearance.rs` が生成した 2 つの模様で各指標を示す
 - `CodecError::InvalidInput`: `appearance` の指標に測れない入力を渡した時の error

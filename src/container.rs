@@ -68,6 +68,33 @@ pub struct ContainerInfo {
     pub metadata: HashMap<String, String>,
 }
 
+/// ボックス / エレメントの長さを信じられない理由。`offset` はその先頭の位置。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ContainerError {
+    /// データがヘッダーの途中で終わる
+    Truncated { offset: usize },
+    /// 仕様にない長さ (ヘッダーより短い等)
+    InvalidSize { offset: usize },
+    /// ヘッダーは読めたが、本体がデータの外で終わる
+    PastEnd { offset: usize },
+    /// EBML の unknown size (RFC 8794 §6.2) 正当だが、この parser は長さを求めない
+    UnknownSize { offset: usize },
+}
+
+impl core::fmt::Display for ContainerError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Truncated { offset } => write!(f, "header cut short at {offset}"),
+            Self::InvalidSize { offset } => write!(f, "invalid size at {offset}"),
+            Self::PastEnd { offset } => write!(f, "ends past the data, starting at {offset}"),
+            Self::UnknownSize { offset } => write!(f, "unknown size at {offset}"),
+        }
+    }
+}
+
+impl std::error::Error for ContainerError {}
+
 // ============================================================================
 // ISO Base Media File Format (MP4) パーサー
 // ============================================================================
@@ -83,78 +110,80 @@ pub struct Mp4Box {
     pub data_offset: usize,
 }
 
-/// MP4 ボックスヘッダーをパース。
+/// ボックスヘッダーを `offset` からパース (ISO/IEC 14496-12 §4.2)。
+///
+/// `size == 0` はファイル末尾まで、`size == 1` は 64 bit の `largesize` が続く。ヘッダーだけを読むので、
+/// 本体がデータの外へ出るボックスも返す (全体を歩く [`list_mp4_boxes`] は `PastEnd` にする)。
+/// `offset` にバイトが無ければ `Ok(None)`。
 ///
 /// # Errors
 ///
-/// データが不足している場合は `None` を返す。
-#[must_use]
-pub fn parse_mp4_box(data: &[u8], offset: usize) -> Option<Mp4Box> {
-    if offset + 8 > data.len() {
-        return None;
-    }
+/// データがヘッダーの途中で終わる時は [`ContainerError::Truncated`]、`size` が 2 から 7 または
+/// `largesize` が 16 未満の時は [`ContainerError::InvalidSize`]。
+pub fn parse_mp4_box(data: &[u8], offset: usize) -> Result<Option<Mp4Box>, ContainerError> {
+    let Some(rest) = data.get(offset..).filter(|rest| !rest.is_empty()) else {
+        return Ok(None);
+    };
+    let truncated = ContainerError::Truncated { offset };
+    let invalid = ContainerError::InvalidSize { offset };
 
-    let size = u32::from_be_bytes([
-        data[offset],
-        data[offset + 1],
-        data[offset + 2],
-        data[offset + 3],
-    ]) as u64;
+    let &[s0, s1, s2, s3, t0, t1, t2, t3, ref after_header @ ..] = rest else {
+        return Err(truncated);
+    };
+    let box_type = [t0, t1, t2, t3];
 
-    let box_type = [
-        data[offset + 4],
-        data[offset + 5],
-        data[offset + 6],
-        data[offset + 7],
-    ];
-
-    let (payload_size, data_offset) = if size == 1 {
-        // 64-bit extended size
-        if offset + 16 > data.len() {
-            return None;
-        }
-        let ext_size = u64::from_be_bytes([
-            data[offset + 8],
-            data[offset + 9],
-            data[offset + 10],
-            data[offset + 11],
-            data[offset + 12],
-            data[offset + 13],
-            data[offset + 14],
-            data[offset + 15],
-        ]);
-        (ext_size.saturating_sub(16), offset + 16)
-    } else if size == 0 {
+    let (payload_size, header_size) = match u32::from_be_bytes([s0, s1, s2, s3]) {
         // ファイル末尾までのボックス
-        let remaining = (data.len() - offset - 8) as u64;
-        (remaining, offset + 8)
-    } else {
-        (size.saturating_sub(8), offset + 8)
+        0 => (after_header.len() as u64, 8),
+        // 64-bit extended size
+        1 => {
+            let &[l0, l1, l2, l3, l4, l5, l6, l7, ..] = after_header else {
+                return Err(truncated);
+            };
+            let largesize = u64::from_be_bytes([l0, l1, l2, l3, l4, l5, l6, l7]);
+            (largesize.checked_sub(16).ok_or(invalid)?, 16)
+        }
+        2..=7 => return Err(invalid),
+        size => (u64::from(size) - 8, 8),
     };
 
-    Some(Mp4Box {
+    Ok(Some(Mp4Box {
         box_type,
         payload_size,
-        data_offset,
-    })
+        data_offset: offset + header_size,
+    }))
 }
 
-/// MP4 のトップレベルボックスを列挙。
-#[must_use]
-pub fn list_mp4_boxes(data: &[u8]) -> Vec<Mp4Box> {
+/// MP4 のトップレベルボックスを列挙。`size == 0` のボックスで終わる。
+///
+/// # Errors
+///
+/// [`parse_mp4_box`] の誤りに加え、ボックスがデータの外で終わる時は [`ContainerError::PastEnd`]。
+/// 途中で切れたファイルと誤った `size` は仕様の上で区別できないので、どちらも `PastEnd`。
+pub fn list_mp4_boxes(data: &[u8]) -> Result<Vec<Mp4Box>, ContainerError> {
     let mut boxes = Vec::new();
     let mut offset = 0;
 
-    while let Some(b) = parse_mp4_box(data, offset) {
-        let total_size = b.payload_size as usize + (b.data_offset - offset);
+    while let Some(b) = parse_mp4_box(data, offset)? {
+        offset = end_of(data, offset, b.data_offset, b.payload_size)?;
         boxes.push(b);
-        offset += total_size;
-        if offset >= data.len() || total_size == 0 {
-            break;
-        }
     }
 
-    boxes
+    Ok(boxes)
+}
+
+/// 本体の終わりの位置 データの外なら `PastEnd`
+fn end_of(
+    data: &[u8],
+    offset: usize,
+    data_offset: usize,
+    size: u64,
+) -> Result<usize, ContainerError> {
+    usize::try_from(size)
+        .ok()
+        .and_then(|size| data_offset.checked_add(size))
+        .filter(|&end| end <= data.len())
+        .ok_or(ContainerError::PastEnd { offset })
 }
 
 /// ボックスタイプを文字列に変換。
@@ -175,7 +204,7 @@ pub fn parse_ftyp(data: &[u8]) -> Option<String> {
 /// データが MP4 形式かどうか判定。
 #[must_use]
 pub fn is_mp4(data: &[u8]) -> bool {
-    parse_mp4_box(data, 0).is_some_and(|b| b.box_type == *b"ftyp")
+    matches!(parse_mp4_box(data, 0), Ok(Some(b)) if b.box_type == *b"ftyp")
 }
 
 // ============================================================================
@@ -232,18 +261,50 @@ pub fn decode_vint_size(data: &[u8], offset: usize) -> Option<(u64, usize)> {
     Some((value, len))
 }
 
-/// EBML エレメントをパース。
-#[must_use]
-pub fn parse_ebml_element(data: &[u8], offset: usize) -> Option<EbmlElement> {
-    let (id, id_len) = decode_vint(data, offset)?;
-    let (data_size, size_len) = decode_vint_size(data, offset + id_len)?;
+/// `offset` の VINT の幅 (RFC 8794 §4)。先頭バイトが 0 なら幅が 8 を超える。
+fn vint_at(data: &[u8], at: usize, offset: usize) -> Result<(u64, usize), ContainerError> {
+    match data.get(at) {
+        Some(0) => Err(ContainerError::InvalidSize { offset }),
+        _ => decode_vint(data, at).ok_or(ContainerError::Truncated { offset }),
+    }
+}
 
-    Some(EbmlElement {
+/// エレメントヘッダーを `offset` からパース (RFC 8794)。
+///
+/// ヘッダーだけを読むので、本体がデータの外へ出るエレメントも返す (全体を歩く
+/// [`list_ebml_elements`] は `PastEnd` にする)。`offset` にバイトが無ければ `Ok(None)`。
+///
+/// # Errors
+///
+/// データがヘッダーの途中で終わる時は [`ContainerError::Truncated`]、VINT の幅が 8 を超える時や ID の
+/// データ部が全 0 / 全 1 の時は [`ContainerError::InvalidSize`]、サイズのデータ部が全 1 の時は
+/// [`ContainerError::UnknownSize`] (ストリームの master element では正当だが、この関数では長さが
+/// 分からない)。
+pub fn parse_ebml_element(
+    data: &[u8],
+    offset: usize,
+) -> Result<Option<EbmlElement>, ContainerError> {
+    if offset >= data.len() {
+        return Ok(None);
+    }
+    let (id, id_len) = vint_at(data, offset, offset)?;
+    let id_marker = 1u64 << (7 * id_len);
+    if id == id_marker || id == (id_marker << 1) - 1 {
+        return Err(ContainerError::InvalidSize { offset });
+    }
+    let (raw_size, size_len) = vint_at(data, offset + id_len, offset)?;
+    let size_marker = 1u64 << (7 * size_len);
+    let data_size = raw_size ^ size_marker;
+    if data_size == size_marker - 1 {
+        return Err(ContainerError::UnknownSize { offset });
+    }
+
+    Ok(Some(EbmlElement {
         id,
         data_size,
         data_offset: offset + id_len + size_len,
         header_size: id_len + size_len,
-    })
+    }))
 }
 
 /// データが Matroska/WebM 形式かどうか判定。
@@ -271,21 +332,22 @@ pub fn detect_format(data: &[u8]) -> ContainerFormat {
 }
 
 /// EBML のトップレベルエレメントを列挙。
-#[must_use]
-pub fn list_ebml_elements(data: &[u8]) -> Vec<EbmlElement> {
+///
+/// # Errors
+///
+/// [`parse_ebml_element`] の誤りに加え、エレメントがデータの外で終わる時は
+/// [`ContainerError::PastEnd`]。途中で切れたファイルと誤ったサイズは仕様の上で区別できないので、
+/// どちらも `PastEnd`。
+pub fn list_ebml_elements(data: &[u8]) -> Result<Vec<EbmlElement>, ContainerError> {
     let mut elements = Vec::new();
     let mut offset = 0;
 
-    while let Some(elem) = parse_ebml_element(data, offset) {
-        let total = elem.header_size + elem.data_size as usize;
+    while let Some(elem) = parse_ebml_element(data, offset)? {
+        offset = end_of(data, offset, elem.data_offset, elem.data_size)?;
         elements.push(elem);
-        offset += total;
-        if offset >= data.len() || total == 0 {
-            break;
-        }
     }
 
-    elements
+    Ok(elements)
 }
 
 // ============================================================================
@@ -303,7 +365,7 @@ mod tests {
         // size=20 (0x14), type="ftyp"
         let mut data = vec![0x00, 0x00, 0x00, 0x14, b'f', b't', b'y', b'p'];
         data.extend_from_slice(&[0; 12]); // ペイロード
-        let b = parse_mp4_box(&data, 0).unwrap();
+        let b = parse_mp4_box(&data, 0).unwrap().unwrap();
         assert_eq!(&b.box_type, b"ftyp");
         assert_eq!(b.payload_size, 12);
         assert_eq!(b.data_offset, 8);
@@ -316,7 +378,7 @@ mod tests {
         // 64-bit extended size = 24
         data.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 24]);
         data.extend_from_slice(&[0; 8]); // ペイロード
-        let b = parse_mp4_box(&data, 0).unwrap();
+        let b = parse_mp4_box(&data, 0).unwrap().unwrap();
         assert_eq!(&b.box_type, b"mdat");
         assert_eq!(b.payload_size, 8); // 24 - 16
         assert_eq!(b.data_offset, 16);
@@ -325,7 +387,10 @@ mod tests {
     #[test]
     fn parse_mp4_box_too_short() {
         let data = vec![0x00, 0x00, 0x00];
-        assert!(parse_mp4_box(&data, 0).is_none());
+        assert_eq!(
+            parse_mp4_box(&data, 0).err(),
+            Some(ContainerError::Truncated { offset: 0 })
+        );
     }
 
     #[test]
@@ -336,7 +401,7 @@ mod tests {
         // Box 2: moov, size=16
         data.extend_from_slice(&[0, 0, 0, 16, b'm', b'o', b'o', b'v', 0, 0, 0, 0, 0, 0, 0, 0]);
 
-        let boxes = list_mp4_boxes(&data);
+        let boxes = list_mp4_boxes(&data).unwrap();
         assert_eq!(boxes.len(), 2);
         assert_eq!(box_type_str(&boxes[0].box_type), "ftyp");
         assert_eq!(box_type_str(&boxes[1].box_type), "moov");
@@ -421,7 +486,7 @@ mod tests {
     fn parse_ebml_element_basic() {
         // ID: 0x1A45DFA3 (4 bytes), Size: 0x85 (1 byte, value=5)
         let data = [0x1A, 0x45, 0xDF, 0xA3, 0x85, 0, 0, 0, 0, 0];
-        let elem = parse_ebml_element(&data, 0).unwrap();
+        let elem = parse_ebml_element(&data, 0).unwrap().unwrap();
         assert_eq!(elem.id, 0x1A45_DFA3);
         assert_eq!(elem.data_size, 5);
         assert_eq!(elem.data_offset, 5);
@@ -468,7 +533,7 @@ mod tests {
         // Element 1: ID=0x82(1byte), Size=0x82(1byte, val=2), data=2bytes
         // Element 2: ID=0x83(1byte), Size=0x81(1byte, val=1), data=1byte
         let data = [0x82, 0x82, 0xAA, 0xBB, 0x83, 0x81, 0xCC];
-        let elems = list_ebml_elements(&data);
+        let elems = list_ebml_elements(&data).unwrap();
         assert_eq!(elems.len(), 2);
         assert_eq!(elems[0].id, 0x82);
         assert_eq!(elems[0].data_size, 2);
@@ -526,7 +591,7 @@ mod tests {
     fn mp4_box_size_zero() {
         // size=0 → ファイル末尾までのボックス
         let data = vec![0, 0, 0, 0, b'm', b'd', b'a', b't', 1, 2, 3, 4, 5];
-        let b = parse_mp4_box(&data, 0).unwrap();
+        let b = parse_mp4_box(&data, 0).unwrap().unwrap();
         assert_eq!(&b.box_type, b"mdat");
         assert_eq!(b.payload_size, 5); // 13 - 8
     }
