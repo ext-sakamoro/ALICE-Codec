@@ -455,6 +455,12 @@ fn ebml_rows() -> Vec<(&'static str, Vec<u8>, Elements)> {
             Ok(vec![(0x81, 1, 3)]),
         ),
         // invalid
+        // 8 is the widest this parser reads, for an ID as for a size
+        (
+            "an 8-byte id",
+            vec![0x01, 0x02, 0, 0, 0, 0, 0, 0, 0x80],
+            Ok(vec![(0x0102_0000_0000_0000, 0, 9)]),
+        ),
         // over 8 is the limit of this parser, not of RFC 8794 (§5, §6.1)
         (
             "id width over 8",
