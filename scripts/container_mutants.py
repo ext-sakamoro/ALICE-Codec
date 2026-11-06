@@ -6,9 +6,12 @@ exit 0 if every mutant applied, compiled and made a test report FAILED; exit 1 o
 
 Run by hand when src/container.rs changes: each mutant rebuilds the crate. A mutant that does not
 compile or no longer applies counts against the result, since it tested nothing. The file is restored
-after each mutant, and at the end even after an interrupt.
+after each mutant, and at the end even after an interrupt. A mutant past the time limit is killed with its
+process group and counts as red: a mutant that removes a limit can hang.
 """
+import os
 import re
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "src" / "container.rs"
 COMMAND = ["cargo", "test", "--test", "container_sizes"]
 FAILED = re.compile(r"^test .* \.\.\. .*FAILED", re.M)
+TIMEOUT_SECS = 300
 
 END = """        .and_then(|size| data_offset.checked_add(size))
         .filter(|&end| end <= data.len())"""
@@ -66,6 +70,21 @@ MUTANTS = [
 ]
 
 
+def run_tests(extra: list[str]) -> tuple[int | None, str]:
+    """(exit code, output); exit code None means the time limit killed the process group."""
+    p = subprocess.Popen(
+        COMMAND + extra, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        start_new_session=True,
+    )
+    try:
+        out, _ = p.communicate(timeout=TIMEOUT_SECS)
+        return p.returncode, out
+    except subprocess.TimeoutExpired:
+        os.killpg(p.pid, signal.SIGKILL)
+        out, _ = p.communicate()
+        return None, out
+
+
 def main() -> int:
     extra = sys.argv[1:]
     if extra not in ([], ["--release"]):
@@ -80,18 +99,17 @@ def main() -> int:
                 print(f"NOT APPLIED  {name}", flush=True)
                 continue
             SOURCE.write_text(original.replace(old, new), encoding="utf-8")
-            done = subprocess.run(
-                COMMAND + extra, cwd=ROOT, capture_output=True, text=True, check=False
-            )
-            output = done.stdout + done.stderr
+            rc, output = run_tests(extra)
             if "could not compile" in output:
                 bad.append(name)
                 print(f"BROKEN       {name}", flush=True)
-            elif done.returncode != 0 and FAILED.search(output):
+            elif rc is None:
+                print(f"red (killed) {name}", flush=True)
+            elif rc != 0 and FAILED.search(output):
                 print(f"red          {name}", flush=True)
             else:
                 bad.append(name)
-                print(f"SURVIVED     {name} (rc {done.returncode})", flush=True)
+                print(f"SURVIVED     {name} (rc {rc})", flush=True)
     finally:
         SOURCE.write_text(original, encoding="utf-8")
     print(f"{len(MUTANTS) - len(bad)} of {len(MUTANTS)} red")
