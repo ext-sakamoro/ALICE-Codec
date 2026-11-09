@@ -8,6 +8,7 @@ All notable changes to ALICE-Codec will be documented in this file.
 - **`container::list_mp4_boxes` / `list_ebml_elements` が細工された長さで桁あふれしていた** — `offset += total` は overflow check の無い release で wrap し、先頭へ戻った位置から存在しないボックスを列挙した (check のある build では panic) この crate の中と ALICE-* の src に呼び出し元は無い
 
 ### Changed
+- 依存: alice-crypto を 0.7 に上げた (`std` の API は同じ、0.7 は module ごとの feature を足した版)
 - 変異試験の script に時間制限を入れた 時間を超えた変異は process group ごと止めて red に数える
 - **Breaking (0.2.0)**: `parse_mp4_box` / `parse_ebml_element` は `Result<Option<_>, ContainerError>`、`list_mp4_boxes` / `list_ebml_elements` は `Result<Vec<_>, ContainerError>` になった 以前は不正な長さで短い一覧を返し、完全な一覧と区別できなかった `ContainerError` は `Truncated` (ヘッダーの途中で終わる) / `InvalidSize` (ISO/IEC 14496-12 §4.2.2 の `size` 2 から 7、`largesize` 16 未満、`uuid` のヘッダーより短い長さ、RFC 8794 §5 の全 0・全 1 の ID と最短でない ID、この parser の上限である幅 9 以上の VINT) / `PastEnd` (本体がデータの外) / `UnknownSize` (RFC 8794 の unknown size は正当だが長さを求めない) `uuid` ボックスの `payload_size` と `data_offset` は 16 バイトの `usertype` を含まない
 - CI: `fuzz.yml` の `Run fuzz target` の `continue-on-error` を外し、crash で job を red にする artifact は残す
