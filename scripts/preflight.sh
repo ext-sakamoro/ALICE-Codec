@@ -6,7 +6,7 @@
 # Run `--quick` before every push.
 #
 # usage: scripts/preflight.sh [--quick]   (--quick skips the test / bench suites)
-# generator rev e2bb3de7ed4ef9138b566d6274e62d4557010dd9
+# generator rev 3144a7f8709082360b591d89edfb2344eeb3603d
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # --- heavy slot (begin) ---
@@ -582,6 +582,8 @@ has_toolchain() { grep -q "^$1" <<<"$(rustup toolchain list)"; }
 #   - fuzz.yml:fuzz:Set fuzz duration [target=fuzz_container_parse] (no cargo / grep)
 #   - fuzz.yml:fuzz:Run fuzz target (time-boxed) [target=fuzz_container_parse] (runner-only (open-ended or unprovable-bounded fuzz run))
 #   - fuzz.yml:gate:gate (reads NEEDS, a value only the runner has)
+#   - public-text.yml:public-text: uses actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 (an action this file cannot run)
+#   - public-text.yml:public-text:Public text (tree at HEAD, then the pushed commits) (no cargo / grep)
 
 need actionlint "brew install actionlint"
 need cargo-audit "cargo install cargo-audit --locked"
@@ -589,79 +591,87 @@ need cargo-deny "cargo install cargo-deny --locked"
 need cargo-hack "cargo install cargo-hack --locked"
 need cargo-machete "cargo install cargo-machete --locked"
 has_toolchain 1.87 || { echo "missing toolchain 1.87 (rustup toolchain install 1.87)" >&2; exit 1; }
+command -v python >/dev/null 2>&1 || python() { python3 "$@"; }
 
 step "ci.yml / clippy: Clippy (default features, all targets)"
 (
   gh_step ci.yml.clippy
 relint
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; cargo clippy --all-targets -- -D warnings )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo clippy --all-targets -- -D warnings )
 )
 
 step "ci.yml / clippy: Clippy (full native feature set, all targets)"
 (
   gh_step ci.yml.clippy
 relint
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; cargo clippy --features "$NATIVE_FEATURES" --all-targets -- -D warnings )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo clippy --features "$NATIVE_FEATURES" --all-targets -- -D warnings )
+)
+
+step "ci.yml / clippy: Clippy (ALICE bridges, all targets)"
+(
+  gh_step ci.yml.clippy
+relint
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo clippy --features "$BRIDGE_FEATURES" --all-targets -- -D warnings )
 )
 
 step "ci.yml / no_std: Build (no_std, host)"
 (
   gh_step ci.yml.no_std
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; cargo rustc --lib --no-default-features --crate-type rlib )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo rustc --lib --no-default-features --crate-type rlib )
 )
 
 step "ci.yml / no_std: Build (no_std + simd, host)"
 (
   gh_step ci.yml.no_std
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; cargo rustc --lib --no-default-features --features simd --crate-type rlib )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo rustc --lib --no-default-features --features simd --crate-type rlib )
 )
 
 step "ci.yml / no_std: Build (no_std, bare-metal thumbv7em-none-eabihf)"
 (
   gh_step ci.yml.no_std
 grep -q '^thumbv7em-none-eabihf$' <<<"$(rustup target list --installed)" || rustup target add thumbv7em-none-eabihf
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; cargo rustc --lib --no-default-features --crate-type rlib --target thumbv7em-none-eabihf )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo rustc --lib --no-default-features --crate-type rlib --target thumbv7em-none-eabihf )
 )
 
 step "ci.yml / no_std: Clippy (no_std + simd)"
 (
   gh_step ci.yml.no_std
 relint
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; RUSTC_WORKSPACE_WRAPPER="$(rustup which clippy-driver)" cargo rustc --lib --no-default-features --features simd --crate-type rlib -- -D warnings )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; RUSTC_WORKSPACE_WRAPPER="$(rustup which clippy-driver)" cargo rustc --lib --no-default-features --features simd --crate-type rlib -- -D warnings )
 )
 
 step "ci.yml / msrv: Check (default + full native feature set)"
 (
   gh_step ci.yml.msrv
 (
-  export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"
+  export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"
   cargo +1.87 check --lib
   cargo +1.87 check --lib --features "$NATIVE_FEATURES"
 )
 )
 
-step "ci.yml / feature-powerset: Powerset (std + {cli, simd, ffi} depth 2)"
+step "ci.yml / feature-powerset: Powerset (std + {cli, simd, ffi, ml, db, crypto, cache} depth 2)"
 (
   gh_step ci.yml.feature-powerset
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; cargo hack check --lib --feature-powerset --depth 2 --exclude-features python,ml,db,crypto,cache --features std )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo hack check --lib --feature-powerset --depth 2 --exclude-features python --features std )
 )
 
 step "ci.yml / fmt: Check formatting"
 (
   gh_step ci.yml.fmt
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; cargo fmt -- --check )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo fmt -- --check )
 )
 
 step "ci.yml / fmt: git consumer builds alice-codec alone"
 (
   gh_step ci.yml.fmt
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; python3 scripts/test_git_consumer.py )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; python3 scripts/test_git_consumer.py )
 )
 
 step "ci.yml / doc: Doc (full native feature set)"
 (
   gh_step ci.yml.doc
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" RUSTDOCFLAGS="-Dwarnings"; cargo doc --no-deps --features "$NATIVE_FEATURES" )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache" RUSTDOCFLAGS="-Dwarnings"; cargo doc --no-deps --features "$NATIVE_FEATURES" )
 )
 
 step "ci.yml / actionlint: actionlint"
@@ -674,7 +684,7 @@ step "ci.yml / actionlint: workflow-timeouts"
 (
   gh_step ci.yml.actionlint
 (
-  export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"
+  export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"
   python3 scripts/test_workflow_timeouts.py
   python3 scripts/workflow_timeouts.py
 )
@@ -809,6 +819,12 @@ else
 fi
 )
 
+step "public-text.yml / public-text: Tests of scripts/public_text.sh (no network)"
+(
+  gh_step public-text.yml.public-text
+( python scripts/test_public_text.py )
+)
+
 if [[ $quick -eq 1 ]]; then
   echo; echo "preflight --quick OK (test / bench suites skipped)"; exit 0
 fi
@@ -816,19 +832,25 @@ fi
 step "ci.yml / test: Test (default)"
 (
   gh_step ci.yml.test
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; cargo test )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo test )
 )
 
 step "ci.yml / test: Test (full native feature set)"
 (
   gh_step ci.yml.test
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; cargo test --features "$NATIVE_FEATURES" )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo test --features "$NATIVE_FEATURES" )
+)
+
+step "ci.yml / test: Test (ALICE bridges)"
+(
+  gh_step ci.yml.test
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo test --features "$BRIDGE_FEATURES" )
 )
 
 step "ci.yml / test: Test (container sizes, release profile)"
 (
   gh_step ci.yml.test
-( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi"; cargo test --release --test container_sizes )
+( export CARGO_TERM_COLOR="always" RUSTFLAGS="-Dwarnings" NATIVE_FEATURES="std,cli,simd,ffi" BRIDGE_FEATURES="std,ml,db,crypto,cache"; cargo test --release --test container_sizes )
 )
 
 step "security-audit.yml / audit: Run cargo audit"

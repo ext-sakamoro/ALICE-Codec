@@ -26,6 +26,7 @@ env:
   RUSTFLAGS: "-Dwarnings"
   # full native feature set (python / sibling bridge を除く、test / clippy / doc で共用)
   NATIVE_FEATURES: "std,cli,simd,ffi"
+  BRIDGE_FEATURES: "std,ml,db,crypto,cache"
 
 jobs:
   test:
@@ -40,6 +41,9 @@ jobs:
         run: cargo test
       - name: Test (full native feature set)
         run: cargo test --features "$NATIVE_FEATURES"
+      # the bridges to alice-ml / alice-db / alice-crypto / alice-cache (git, branch main)
+      - name: Test (ALICE bridges)
+        run: cargo test --features "$BRIDGE_FEATURES"
       # without overflow checks integer overflow wraps instead of panicking, so a parser's result
       # can differ between the profiles
       - name: Test (container sizes, release profile)
@@ -59,6 +63,8 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Clippy (full native feature set, all targets)
         run: cargo clippy --features "$NATIVE_FEATURES" --all-targets -- -D warnings
+      - name: Clippy (ALICE bridges, all targets)
+        run: cargo clippy --features "$BRIDGE_FEATURES" --all-targets -- -D warnings
 
   no_std:
     name: no_std (rlib、host + bare-metal thumbv7em)
@@ -110,8 +116,8 @@ jobs:
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack
       # std 固定: std なしの組合せは cdylib link 要求で落ちるため no_std job 側で rlib として検証
-      - name: Powerset (std + {cli, simd, ffi} depth 2)
-        run: cargo hack check --lib --feature-powerset --depth 2 --exclude-features python,ml,db,crypto,cache --features std
+      - name: Powerset (std + {cli, simd, ffi, ml, db, crypto, cache} depth 2)
+        run: cargo hack check --lib --feature-powerset --depth 2 --exclude-features python --features std
 
   fmt:
     name: Format
