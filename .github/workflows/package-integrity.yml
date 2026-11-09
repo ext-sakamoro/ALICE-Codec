@@ -2,16 +2,15 @@ name: Package integrity
 
 # Dormant: runs only when dispatched
 #
-# Why: alice-det-math (0.5.2 at 2d01c63f), the optional alice-ml (0.4.0 at 6e0dd060) and the
-# optional alice-db (0.6.0 at 866b8f11) are taken by git rev, and those versions are not on
+# Why: every alice-* dependency (alice-det-math 0.6, and the optional alice-ml 0.4, alice-db 0.6,
+# alice-crypto 0.6 and alice-cache 0.2) is taken by git at branch main, and none is taken from
 # crates.io. `cargo package` drops the git source and resolves every dependency from crates.io, so
-# it cannot pass until they are published. alice-codec itself is publish = false. What a git
+# it cannot pass without a patch for each. alice-codec itself is publish = false. What a git
 # consumer gets is checked on every push instead (scripts/test_git_consumer.py, ci.yml and
 # preflight: a consumer outside this repository builds alice-codec from a copy of the tracked tree).
 #
-# Restore on push (move this job back into security-audit.yml) when every alice-* dependency is
-# taken from crates.io again, i.e. alice-det-math 0.5.2, alice-ml 0.4, alice-zip 0.11 and alice-db
-# 0.6 are published.
+# Restore on push (move this job back into security-audit.yml) when the shared
+# scripts/package_integrity.py patches branch dependencies with the reference Cargo.toml names.
 
 on:
   workflow_dispatch:

@@ -4,10 +4,10 @@ dependencies it uses must resolve, and build, from the manifests alone.
 
 - No manifest names a sibling by path (`path = "../…"`).
 - A consumer crate next to a copy of the tracked tree placed alone builds alice-codec with the default features,
-  with `ml` (the optional alice-ml) and with `db` (the optional alice-db), both taken by git rev. Each build must
+  with `ml` (the optional alice-ml) and with `db` (the optional alice-db), both taken by git (branch main). Each build must
   compile alice-codec itself and at least one crate, counted from cargo's JSON messages: a build that compiled nothing fails rather than passing.
 
-This replaces the packaged-crate check on push while alice-codec's alice-* dependencies are taken by git rev
+This replaces the packaged-crate check on push while alice-codec's alice-* dependencies are taken by git
 (`.github/workflows/package-integrity.yml` says when that check comes back).
 
 Usage: python3 scripts/test_git_consumer.py

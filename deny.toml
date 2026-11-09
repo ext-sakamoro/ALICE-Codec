@@ -4,8 +4,6 @@
 # ALICE-SDF v1.7.7 (commit 52d26f9) の deny.toml を base に ALICE-Codec 用に調整
 #
 # ALICE-Codec 自体は LicenseRef-Proprietary (target-side self exception 必須)
-# sibling stubs (alice-ml/alice-db/alice-crypto/alice-cache) は alice-stubs action で
-# "MIT OR Apache-2.0" で生成される
 
 [graph]
 all-features = false
@@ -83,17 +81,17 @@ license-files = [{ path = "LICENSE", hash = 0x001c7e6c }]
 name = "alice-codec"
 allow = ["LicenseRef-Proprietary"]
 
-# sibling path dep: CI では stub、local では実 crate が解決されるため例外で許可
+# git の branch main で引く alice-* (Cargo.toml): 例外は main の宣言 (LicenseRef-Proprietary) どおり
 [[licenses.exceptions]]
 name = "alice-cache"
-allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+allow = ["LicenseRef-Proprietary"]
 
-# sibling path dep: CI では stub、local では実 crate が解決されるため例外で許可
+# git の branch main で引く alice-* (Cargo.toml): 例外は main の宣言 (LicenseRef-Proprietary) どおり
 [[licenses.exceptions]]
 name = "alice-crypto"
-allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+allow = ["LicenseRef-Proprietary"]
 
-# git の rev で固定した alice-* (Cargo.toml): 例外は固定した rev の宣言 (LicenseRef-Proprietary) どおり、rev を上げる commit で一緒に変える
+# git の branch main で引く alice-* (Cargo.toml): 例外は main の宣言 (LicenseRef-Proprietary) どおり、宣言が変わる時に一緒に変える
 # alice-zip は alice-db (db feature) が引く
 [[licenses.exceptions]]
 name = "alice-db"
@@ -105,6 +103,11 @@ allow = ["LicenseRef-Proprietary"]
 
 [[licenses.exceptions]]
 name = "alice-det-math"
+allow = ["LicenseRef-Proprietary"]
+
+# alice-db (db feature) が git の rev で引く
+[[licenses.exceptions]]
+name = "alice-serial"
 allow = ["LicenseRef-Proprietary"]
 
 [[licenses.exceptions]]
@@ -132,6 +135,6 @@ skip-tree = []
 unknown-registry = "warn"
 unknown-git = "warn"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+allow-git = ["https://github.com/ext-sakamoro/ALICE-Cache", "https://github.com/ext-sakamoro/ALICE-Crypto", "https://github.com/ext-sakamoro/ALICE-DB", "https://github.com/ext-sakamoro/ALICE-DetMath", "https://github.com/ext-sakamoro/ALICE-ML", "https://github.com/ext-sakamoro/ALICE-Serial", "https://github.com/ext-sakamoro/ALICE-Zip"]
 
 [sources.allow-org]
