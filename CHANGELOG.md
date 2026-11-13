@@ -4,6 +4,9 @@ All notable changes to ALICE-Codec will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- 依存: alice-db 0.7 (展開は上限付きだけ、blob の圧縮値に元の長さを記録、config は `#[non_exhaustive]`) この crate は config を組み立てないので code の変更なし
+
 ### Security
 - **`container::list_mp4_boxes` / `list_ebml_elements` が細工された長さで桁あふれしていた** — `offset += total` は overflow check の無い release で wrap し、先頭へ戻った位置から存在しないボックスを列挙した (check のある build では panic) この crate の中と ALICE-* の src に呼び出し元は無い
 
